@@ -5,10 +5,19 @@ import re
 from datetime import datetime
 from typing import Optional
 
-import fitz  # PyMuPDF
-from docx import Document
-from docx.shared import Pt, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+try:
+    import fitz  # PyMuPDF
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
+
+try:
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
 
 
 DRAFTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "drafts")
@@ -29,6 +38,8 @@ def extract_pdf_text(filepath: str, max_pages: int = 50) -> str:
 
     Returns the full text content, truncated if very long.
     """
+    if not HAS_FITZ:
+        return "[Error: PyMuPDF is not available in this environment. PDF reading is disabled.]"
     doc = fitz.open(filepath)
     pages = []
     for i, page in enumerate(doc):
@@ -76,6 +87,8 @@ def export_to_word(content: str, filename: str = "", title: str = "") -> str:
 
     Returns the full path of the saved .docx file.
     """
+    if not HAS_DOCX:
+        return "[Error: python-docx is not available in this environment. Word export is disabled.]"
     ensure_drafts_dir()
     if not filename:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
