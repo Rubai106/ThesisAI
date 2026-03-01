@@ -382,7 +382,7 @@
           <p>Your AI-powered research assistant for thesis work.</p>
           <p style="margin-top:4px;font-size:0.85rem;">Ask anything, upload PDFs, generate outlines, draft chapters, and export to Word or LaTeX.</p>
           <div class="chips">
-            <div class="chip" onclick="sendMessage('Find recent papers on transformer architectures')">Find papers</div>
+            <div class="chip" onclick="findPapers()">Find papers</div>
             <div class="chip" onclick="sendMessage('/outline')">Generate outline</div>
             <div class="chip" onclick="sendMessage('/write Introduction')">Draft a chapter</div>
             <div class="chip" onclick="sendMessage('/abstract')">Generate abstract</div>
@@ -1173,6 +1173,30 @@ async function exportConversation(format) {
     URL.revokeObjectURL(url);
     showToast(`Conversation exported as .${ext}`);
   } catch { showToast('Export failed'); }
+}
+
+// ══════════════════════════════════════════
+//  FIND PAPERS (topic-aware)
+// ══════════════════════════════════════════
+
+async function findPapers() {
+  // Try to get the user's thesis topic from memory
+  try {
+    const resp = await apiFetch('/api/memory/full');
+    const data = await resp.json();
+    const topic = data.thesis_topic || data.research_area || '';
+    if (topic) {
+      sendMessage(`Find recent research papers on ${topic}`);
+      return;
+    }
+  } catch {}
+  // No topic set — ask the user
+  const topic = prompt('What topic should I search papers for?', '');
+  if (topic && topic.trim()) {
+    sendMessage(`Find recent research papers on ${topic.trim()}`);
+  } else {
+    sendMessage('Find recent research papers related to my thesis topic');
+  }
 }
 
 // ══════════════════════════════════════════
