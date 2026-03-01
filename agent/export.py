@@ -1,5 +1,7 @@
 """Export utilities for ThesisAI — PDF reading, Word/LaTeX export, file saving."""
 
+from __future__ import annotations
+
 import os
 import re
 from datetime import datetime
