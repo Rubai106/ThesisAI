@@ -2,6 +2,8 @@
 
 AI-powered autonomous research assistant for thesis and academic writing.
 
+**Live Demo:** [https://thesisai-one-lake.vercel.app](https://thesisai-one-lake.vercel.app)
+
 ## Features
 
 - **Web Search** — Search for academic papers, datasets, and documentation across arXiv, Google Scholar, IEEE, ACM
