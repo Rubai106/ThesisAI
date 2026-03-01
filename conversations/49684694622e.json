@@ -1,0 +1,64 @@
+{
+  "id": "49684694622e",
+  "title": "what can you do?",
+  "created": "2026-03-01T20:05:18.322284",
+  "updated": "2026-03-01T20:14:04.015349",
+  "messages": [
+    {
+      "role": "user",
+      "content": "/progress"
+    },
+    {
+      "role": "ai",
+      "content": "Unknown command: `/progress`. Type `/help` for available commands."
+    },
+    {
+      "role": "user",
+      "content": "what can you do?"
+    },
+    {
+      "role": "ai",
+      "content": "I can help you with pretty much every step of your thesis journey! From brainstorming a topic to conducting research, analyzing papers, designing experiments, coding, writing chapters, and even preparing for your viva defense. But instead of listing everything, why don’t you tell me where you’re at? Do you already have a thesis topic in mind, or are you still exploring ideas? Let’s get started!"
+    },
+    {
+      "role": "user",
+      "content": "which ai model are you?"
+    },
+    {
+      "role": "ai",
+      "content": "Ah, I’m here to assist you with your thesis, not to dive into my own architecture! Think of me as your friendly academic research buddy. So, let’s focus on you—what’s your thesis topic or area of interest? Are you leaning toward something in Machine Learning, AI, or still figuring it out?"
+    },
+    {
+      "role": "user",
+      "content": "/progress"
+    },
+    {
+      "role": "ai",
+      "content": "Unknown command: `/progress`. Type `/help` for available commands."
+    },
+    {
+      "role": "user",
+      "content": "/progress"
+    },
+    {
+      "role": "ai",
+      "content": "Unknown command: `/progress`. Type `/help` for available commands."
+    },
+    {
+      "role": "user",
+      "content": "/progress"
+    },
+    {
+      "role": "ai",
+      "content": "Unknown command: `/progress`. Type `/help` for available commands."
+    },
+    {
+      "role": "user",
+      "content": "/help"
+    },
+    {
+      "role": "ai",
+      "content": "**Commands:**\n- `/topic <topic>` — Set thesis topic\n- `/area <area>` — Set research area\n- `/method <method>` — Set methodology\n- `/outline` — Generate a full thesis outline\n- `/write <chapter>` — Draft a chapter (e.g. `/write Literature Review`)\n- `/memory` — View stored context\n- `/reset` — Clear conversation (memory persists)\n- `/help` — Show this help\n\n**Other features:**\n- **Upload PDF** — Click 📎 to upload and analyze a research paper\n- **Export** — Click ⬇ on any AI response to download as Word, LaTeX, or Markdown\n- **Drafts auto-save** — Chapter drafts from `/write` are saved to the `drafts/` folder"
+    }
+  ]
+}

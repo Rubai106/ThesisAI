@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ThesisAI — Research Assistant</title>
+<style>
+  :root {
+    --bg: #000000;
+    --surface: #0a0a0a;
+    --surface2: #141414;
+    --border: #222222;
+    --text: #e0e0e0;
+    --text-dim: #777777;
+    --accent: #ffffff;
+    --accent-hover: #cccccc;
+    --user-bg: #141414;
+    --ai-bg: #0a0a0a;
+    --error-bg: #1a0000;
+    --green: #ffffff;
+    --red: #999999;
+    --yellow: #999999;
+    --radius: 12px;
+    --sidebar-w: 260px;
+    --panel-w: 400px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; overflow: hidden;
+  }
+
+  /* ═══════════════════════════════════════
+     LEFT SIDEBAR — Conversations
+     ═══════════════════════════════════════ */
+  .sidebar {
+    width: var(--sidebar-w); background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+    z-index: 15;
+  }
+  .sidebar-header {
+    padding: 16px; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .sidebar-brand { font-size: 1.3rem; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
+  .sidebar-brand span { color: var(--text); }
+  .new-chat-btn {
+    background: #ffffff; color: #000000; border: none; border-radius: 8px;
+    padding: 10px 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; transition: background 0.15s;
+    width: 100%;
+  }
+  .new-chat-btn:hover { background: #cccccc; }
+  .new-chat-btn svg { width: 16px; height: 16px; }
+
+  .conv-list {
+    flex: 1; overflow-y: auto; padding: 8px;
+  }
+  .conv-list::-webkit-scrollbar { width: 4px; }
+  .conv-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .conv-date-group { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 12px 8px 4px; font-weight: 600; }
+
+  .conv-item {
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    font-size: 0.82rem; color: var(--text-dim); transition: all 0.12s;
+    display: flex; align-items: center; gap: 8px;
+    position: relative; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .conv-item:hover { background: var(--surface2); color: var(--text); }
+  .conv-item.active { background: var(--surface2); color: var(--text); }
+  .conv-item .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .conv-item .conv-actions {
+    display: none; gap: 4px; flex-shrink: 0;
+  }
+  .conv-item:hover .conv-actions { display: flex; }
+  .conv-item .conv-act-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 0.75rem; padding: 2px 4px; border-radius: 3px; transition: all 0.12s;
+  }
+  .conv-item .conv-act-btn:hover { color: var(--text); background: var(--border); }
+  .conv-item .conv-act-btn.del:hover { color: #fff; }
+
+  .conv-empty { text-align: center; color: var(--text-dim); font-size: 0.8rem;
+    padding: 30px 16px; font-style: italic; }
+
+  /* ═══════════════════════════════════════
+     MAIN AREA
+     ═══════════════════════════════════════ */
+  .main-area {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+    position: relative;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 10px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; z-index: 10;
+  }
+  .header .page-title { font-size: 0.95rem; font-weight: 600; color: var(--text);
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header-actions { display: flex; gap: 8px; }
+  .header-actions button {
+    background: var(--border); color: var(--text-dim); border: none;
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+  .header-actions button:hover { background: #ffffff; color: #000; }
+  .header-actions button.active { background: #ffffff; color: #000; }
+
+  /* Chat + Right Panel layout */
+  .content-layout { flex: 1; display: flex; overflow: hidden; }
+
+  /* ── Chat area ───────────────────── */
+  .chat-wrapper { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-container {
+    flex: 1; overflow-y: auto; padding: 24px;
+    display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth;
+  }
+  .chat-container::-webkit-scrollbar { width: 6px; }
+  .chat-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .message { max-width: 780px; width: 100%; margin: 0 auto; display: flex; gap: 12px; animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .avatar { width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .avatar.user { background: #1a1a1a; color: var(--text); }
+  .avatar.ai   { background: #1a1a1a; color: var(--text); }
+
+  .msg-content { flex: 1; min-width: 0; }
+  .bubble { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 18px; line-height: 1.65; font-size: 0.92rem; overflow-wrap: break-word; }
+  .bubble.user-bubble { background: #111111; border-color: #2a2a2a; }
+  .bubble.error-bubble { background: #111111; border-color: #333; color: #aaa; }
+
+  .bubble h1,.bubble h2,.bubble h3 { margin:12px 0 6px; color: var(--text); }
+  .bubble h1 { font-size:1.2rem } .bubble h2 { font-size:1.1rem } .bubble h3 { font-size:1rem }
+  .bubble p { margin:6px 0 } .bubble ul,.bubble ol { margin:6px 0 6px 20px } .bubble li { margin:3px 0 }
+  .bubble code { background:#161616; padding:2px 6px; border-radius:4px; font-family:'Cascadia Code','Fira Code',monospace; font-size:0.85em; color:var(--text) }
+  .bubble pre { background:#0c0c0c; border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; margin:8px 0 }
+  .bubble pre code { background:none; padding:0; font-size:0.85em }
+  .bubble table { border-collapse:collapse; margin:8px 0; width:100%; font-size:0.85em }
+  .bubble th,.bubble td { border:1px solid var(--border); padding:6px 10px; text-align:left }
+  .bubble th { background:#111; color:var(--text) }
+  .bubble blockquote { border-left:3px solid #444; padding-left:12px; color:var(--text-dim); margin:8px 0 }
+  .bubble a { color:var(--text); text-decoration:underline } .bubble a:hover { opacity:0.7 }
+  .bubble strong { color:var(--text) }
+
+  .export-bar { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap }
+  .export-btn { background:var(--border); color:var(--text-dim); border:none;
+    padding:4px 10px; border-radius:5px; cursor:pointer; font-size:0.72rem;
+    transition:all 0.15s; display:flex; align-items:center; gap:4px }
+  .export-btn:hover { background:#fff; color:#000 }
+
+  .thinking { display:flex; gap:4px; padding:8px 0 }
+  .thinking span { width:8px; height:8px; background:var(--text); border-radius:50%; animation:bounce 1.2s infinite }
+  .thinking span:nth-child(2){animation-delay:.2s} .thinking span:nth-child(3){animation-delay:.4s}
+  @keyframes bounce { 0%,80%,100%{transform:scale(.6);opacity:.4} 40%{transform:scale(1);opacity:1} }
+
+  /* Input area */
+  .input-area { background:var(--surface); border-top:1px solid var(--border); padding:16px 24px; flex-shrink:0 }
+  .input-wrapper { max-width:780px; margin:0 auto; display:flex; gap:10px; align-items:flex-end }
+  #messageInput { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:10px;
+    padding:12px 16px; color:var(--text); font-size:0.95rem; font-family:inherit;
+    resize:none; min-height:46px; max-height:200px; outline:none; transition:border-color .15s }
+  #messageInput:focus { border-color:#fff }
+  #messageInput::placeholder { color:var(--text-dim) }
+  .input-btn { background:#fff; color:#000; border:none; border-radius:10px;
+    width:46px; height:46px; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; transition:background .15s; flex-shrink:0 }
+  .input-btn:hover { background:#ccc }
+  .input-btn:disabled { opacity:.4; cursor:not-allowed }
+  .input-btn svg { width:20px; height:20px }
+  .input-btn.upload-btn { background:#1a1a1a; color:var(--text) }
+  .input-btn.upload-btn:hover { background:#333 }
+  #pdfInput { display:none }
+  .input-hint { max-width:780px; margin:6px auto 0; font-size:.75rem; color:var(--text-dim) }
+
+  /* Welcome */
+  .welcome { max-width:780px; margin:auto; text-align:center; padding:40px 20px; color:var(--text-dim) }
+  .welcome h2 { font-size:1.8rem; color:var(--text); margin-bottom:8px }
+  .welcome p { margin:6px 0 }
+  .welcome .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:24px }
+  .welcome .chip { background:var(--surface); border:1px solid var(--border); border-radius:20px;
+    padding:8px 16px; font-size:.82rem; color:var(--text); cursor:pointer; transition:all .15s }
+  .welcome .chip:hover { border-color:#fff; color:#fff }
+
+  /* Toast */
+  .toast { position:fixed; bottom:100px; left:50%; transform:translateX(-50%);
+    background:#fff; color:#000; padding:10px 20px; border-radius:8px;
+    font-size:.85rem; font-weight:600; z-index:200; opacity:0;
+    transition:opacity .3s; pointer-events:none }
+  .toast.show { opacity:1 }
+
+  /* ═══════════════════════════════════════
+     RIGHT PANEL (Memory & Drafts)
+     ═══════════════════════════════════════ */
+  .side-panel {
+    width: 0; overflow: hidden; background: var(--surface);
+    border-left: 1px solid var(--border); transition: width 0.25s ease;
+    flex-shrink: 0; display: flex; flex-direction: column;
+  }
+  .side-panel.open { width: var(--panel-w); }
+
+  .panel-header { padding:16px 20px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; flex-shrink:0 }
+  .panel-header h3 { font-size:1rem; color:var(--text); display:flex; align-items:center; gap:8px }
+  .panel-close { background:none; border:none; color:var(--text-dim); font-size:1.3rem;
+    cursor:pointer; padding:4px 8px; border-radius:4px; transition:all .15s }
+  .panel-close:hover { background:var(--border); color:var(--text) }
+
+  .panel-body { flex:1; overflow-y:auto; padding:16px 20px }
+
+  /* Memory fields */
+  .mem-section { margin-bottom:20px }
+  .mem-section-title { font-size:.75rem; text-transform:uppercase; letter-spacing:.5px;
+    color:var(--text-dim); margin-bottom:8px; font-weight:600;
+    display:flex; align-items:center; justify-content:space-between }
+  .mem-field { display:flex; align-items:center; gap:8px; margin-bottom:8px }
+  .mem-field label { font-size:.82rem; color:var(--text-dim); width:90px; flex-shrink:0 }
+  .mem-field input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px;
+    padding:7px 10px; color:var(--text); font-size:.85rem; font-family:inherit; outline:none;
+    transition:border-color .15s; min-width:0 }
+  .mem-field input:focus { border-color:#fff }
+  .mem-field input::placeholder { color:var(--text-dim) }
+  .mem-save-btn { background:#fff; color:#000; border:none; border-radius:5px;
+    padding:6px 10px; cursor:pointer; font-size:.75rem; flex-shrink:0; transition:background .15s }
+  .mem-save-btn:hover { background:#ccc }
+
+  .mem-list { list-style:none }
+  .mem-list-item { background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; margin-bottom:6px; font-size:.82rem;
+    display:flex; align-items:flex-start; gap:8px; animation:fadeIn .2s ease }
+  .mem-list-item .item-text { flex:1; line-height:1.5; word-break:break-word }
+  .mem-list-item .item-date { font-size:.7rem; color:var(--text-dim); margin-top:2px }
+  .mem-list-item .item-del { background:none; border:none; color:var(--text-dim); font-size:.9rem;
+    cursor:pointer; padding:2px 4px; border-radius:3px; flex-shrink:0; transition:all .15s }
+  .mem-list-item .item-del:hover { color:#fff; background:rgba(255,255,255,.1) }
+
+  .mem-add-row { display:flex; gap:6px; margin-top:6px }
+  .mem-add-input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px;
+    padding:7px 10px; color:var(--text); font-size:.82rem; font-family:inherit; outline:none; min-width:0 }
+  .mem-add-input:focus { border-color:#fff }
+  .mem-add-input::placeholder { color:var(--text-dim) }
+  .mem-add-btn { background:#fff; color:#000; border:none; border-radius:5px;
+    padding:6px 12px; cursor:pointer; font-size:.78rem; font-weight:600; flex-shrink:0; transition:opacity .15s }
+  .mem-add-btn:hover { opacity:.85 }
+  .mem-empty { color:var(--text-dim); font-size:.8rem; font-style:italic; padding:8px 0 }
+
+  /* Drafts */
+  .draft-card { background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; margin-bottom:8px; animation:fadeIn .2s ease }
+  .draft-card-header { display:flex; align-items:center; gap:8px; margin-bottom:6px }
+  .draft-card-header .draft-icon { font-size:1.1rem }
+  .draft-card-header .draft-name { flex:1; font-size:.88rem; font-weight:600; color:var(--text); word-break:break-word }
+  .draft-meta { font-size:.72rem; color:var(--text-dim); margin-bottom:8px }
+  .draft-actions { display:flex; gap:6px; flex-wrap:wrap }
+  .draft-actions button { background:var(--border); color:var(--text-dim); border:none;
+    padding:4px 10px; border-radius:5px; cursor:pointer; font-size:.72rem; transition:all .15s }
+  .draft-actions button:hover { background:#fff; color:#000 }
+  .draft-actions button.del-btn:hover { background:#555; color:#fff }
+  .draft-empty { color:var(--text-dim); font-size:.85rem; font-style:italic; text-align:center; padding:30px 0 }
+
+  /* Preview modal */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100;
+    display:none; align-items:center; justify-content:center }
+  .modal-overlay.show { display:flex }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    width:90%; max-width:800px; max-height:85vh; display:flex; flex-direction:column }
+  .modal-header { padding:16px 20px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between }
+  .modal-header h3 { font-size:1rem; color:var(--text) }
+  .modal-content { flex:1; overflow-y:auto; padding:20px; font-size:.9rem; line-height:1.7 }
+  .modal-content h1,.modal-content h2,.modal-content h3 { color:var(--text); margin:14px 0 6px }
+  .modal-content p { margin:6px 0 }
+  .modal-content code { background:#161616; padding:2px 6px; border-radius:4px; font-size:.85em; color:var(--text) }
+  .modal-content pre { background:#0c0c0c; border:1px solid var(--border); border-radius:8px; padding:14px; overflow-x:auto; margin:8px 0 }
+
+  @media (max-width: 900px) {
+    .sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; }
+    :root { --panel-w: 100vw; }
+    .side-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; }
+  }
+
+  /* Export dropdown */
+  .dropdown-wrap { position:relative; display:inline-block }
+  .dropdown-menu { display:none; position:absolute; top:100%; right:0; margin-top:4px;
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    min-width:180px; z-index:50; overflow:hidden; animation:fadeIn .15s ease }
+  .dropdown-wrap.open .dropdown-menu { display:block }
+  .dropdown-menu button { display:block; width:100%; text-align:left; background:none;
+    border:none; color:var(--text-dim); padding:10px 16px; font-size:.82rem;
+    cursor:pointer; transition:all .12s }
+  .dropdown-menu button:hover { background:var(--surface2); color:var(--text) }
+  .dropdown-menu .dd-label { font-size:.7rem; color:var(--text-dim); padding:8px 16px 4px;
+    text-transform:uppercase; letter-spacing:.5px; font-weight:600 }
+</style>
+</head>
+<body>
+
+<!-- ═══ LEFT SIDEBAR ═══ -->
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-brand">Thesis<span>AI</span></div>
+    <button class="new-chat-btn" onclick="newChat()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New Chat
+    </button>
+  </div>
+  <div class="conv-list" id="convList">
+    <div class="conv-empty">No conversations yet.<br>Start chatting!</div>
+  </div>
+</div>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-area">
+  <!-- Header -->
+  <div class="header">
+    <div class="page-title" id="pageTitle">New Chat</div>
+    <div class="header-actions">
+      <button id="btnMemory" onclick="togglePanel('memory')" title="View and edit stored thesis info, papers, notes">Memory</button>
+      <button id="btnDrafts" onclick="togglePanel('drafts')" title="View saved chapter drafts and exports">Drafts</button>
+      <button id="btnProgress" onclick="togglePanel('progress')" title="View your thesis completion progress, checklist, and timeline">Progress</button>
+      <div class="dropdown-wrap" id="exportDropdown">
+        <button onclick="toggleExportDropdown()" title="Download this conversation as a file">Export Chat</button>
+        <div class="dropdown-menu">
+          <div class="dd-label">Download conversation as</div>
+          <button onclick="exportConversation('markdown');closeExportDropdown()">Markdown (.md)</button>
+          <button onclick="exportConversation('word');closeExportDropdown()">Word (.docx)</button>
+          <button onclick="exportConversation('latex');closeExportDropdown()">LaTeX (.tex)</button>
+        </div>
+      </div>
+      <button onclick="sendMessage('/help')" title="Show all available commands">Help</button>
+    </div>
+  </div>
+
+  <!-- Content: chat + right panel -->
+  <div class="content-layout">
+    <div class="chat-wrapper">
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome" id="welcome">
+          <h2>Welcome to ThesisAI</h2>
+          <p>Your AI-powered research assistant for thesis work.</p>
+          <p style="margin-top:4px;font-size:0.85rem;">Ask anything, upload PDFs, generate outlines, draft chapters, and export to Word or LaTeX.</p>
+          <div class="chips">
+            <div class="chip" onclick="sendMessage('Find recent papers on transformer architectures')">Find papers</div>
+            <div class="chip" onclick="sendMessage('/outline')">Generate outline</div>
+            <div class="chip" onclick="sendMessage('/write Introduction')">Draft a chapter</div>
+            <div class="chip" onclick="sendMessage('/abstract')">Generate abstract</div>
+            <div class="chip" onclick="sendMessage('/references')">Bibliography</div>
+            <div class="chip" onclick="sendMessage('/timeline')">Research timeline</div>
+            <div class="chip" onclick="sendMessage('/viva')">Viva prep</div>
+            <div class="chip" onclick="document.getElementById('pdfInput').click()">Upload PDF</div>
+            <div class="chip" onclick="document.getElementById('multiPdfInput').click()">Batch PDF upload</div>
+            <div class="chip" onclick="sendMessage('/progress')">Progress dashboard</div>
+            <div class="chip" onclick="sendMessage('/help')">All commands</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <button class="input-btn upload-btn" onclick="document.getElementById('pdfInput').click()" title="Upload PDF">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+          </button>
+          <input type="file" id="pdfInput" accept=".pdf" onchange="uploadPDF(this)">
+          <input type="file" id="multiPdfInput" accept=".pdf" multiple onchange="uploadMultiplePDFs(this)" style="display:none">
+          <textarea id="messageInput" rows="1" placeholder="Ask ThesisAI anything..." autofocus></textarea>
+          <button class="input-btn" id="sendBtn" onclick="sendFromInput()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="input-hint">Enter to send · Shift+Enter for new line · 📎 Upload PDF · /help for all commands</div>
+      </div>
+    </div>
+
+    <!-- Right Side Panel -->
+    <div class="side-panel" id="sidePanel"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="previewTitle">Preview</h3>
+      <button class="panel-close" onclick="closePreview()">✕</button>
+    </div>
+    <div class="modal-content" id="previewContent"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const chatContainer = document.getElementById('chatContainer');
+const messageInput  = document.getElementById('messageInput');
+const sendBtn       = document.getElementById('sendBtn');
+const sidePanel     = document.getElementById('sidePanel');
+const pageTitle     = document.getElementById('pageTitle');
+
+let busy = false;
+let activePanel = null;
+let currentConvId = null;   // active conversation ID
+
+// ══════════════════════════════════════════
+//  TEXTAREA
+// ══════════════════════════════════════════
+messageInput.addEventListener('input', () => {
+  messageInput.style.height = 'auto';
+  messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+});
+messageInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendFromInput(); }
+});
+
+function sendFromInput() {
+  const msg = messageInput.value.trim();
+  if (!msg || busy) return;
+  messageInput.value = '';
+  messageInput.style.height = 'auto';
+  sendMessage(msg);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ══════════════════════════════════════════
+//  CONVERSATIONS MANAGEMENT
+// ══════════════════════════════════════════
+
+async function loadConversations() {
+  try {
+    const resp = await fetch('/api/conversations');
+    const data = await resp.json();
+    renderConversationList(data.conversations);
+  } catch {}
+}
+
+function renderConversationList(convs) {
+  const list = document.getElementById('convList');
+  if (!convs || convs.length === 0) {
+    list.innerHTML = '<div class="conv-empty">No conversations yet.<br>Start chatting!</div>';
+    return;
+  }
+  // Group by date
+  const groups = {};
+  const now = new Date();
+  convs.forEach(c => {
+    const d = new Date(c.updated || c.created);
+    const diff = (now - d) / (1000 * 60 * 60 * 24);
+    let label;
+    if (diff < 1 && d.getDate() === now.getDate()) label = 'Today';
+    else if (diff < 2) label = 'Yesterday';
+    else if (diff < 7) label = 'This Week';
+    else if (diff < 30) label = 'This Month';
+    else label = 'Older';
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(c);
+  });
+
+  let html = '';
+  for (const [label, items] of Object.entries(groups)) {
+    html += `<div class="conv-date-group">${label}</div>`;
+    items.forEach(c => {
+      const isActive = c.id === currentConvId;
+      const title = escHtml(c.title || 'New Chat');
+      const count = c.message_count || 0;
+      html += `<div class="conv-item ${isActive ? 'active' : ''}" onclick="switchConversation('${c.id}')">
+        <span class="conv-title" title="${title}">${title}</span>
+        <div class="conv-actions">
+          <button class="conv-act-btn" onclick="event.stopPropagation();renameConversation('${c.id}')" title="Rename">✏️</button>
+          <button class="conv-act-btn del" onclick="event.stopPropagation();deleteConversation('${c.id}')" title="Delete">🗑</button>
+        </div>
+      </div>`;
+    });
+  }
+  list.innerHTML = html;
+}
+
+async function newChat() {
+  // Reset the agent's conversation on the server
+  await fetch('/api/reset', { method: 'POST' });
+  // Create a new conversation
+  try {
+    const resp = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Chat' }),
+    });
+    const conv = await resp.json();
+    currentConvId = conv.id;
+    localStorage.setItem('currentConvId', currentConvId);
+    pageTitle.textContent = 'New Chat';
+    clearChatUI();
+    loadConversations();
+  } catch {
+    showToast('Failed to create conversation');
+  }
+}
+
+async function switchConversation(convId) {
+  if (convId === currentConvId) return;
+  // Reset the agent on server (clear in-memory history so it doesn't bleed)
+  await fetch('/api/reset', { method: 'POST' });
+  currentConvId = convId;
+  localStorage.setItem('currentConvId', convId);
+  clearChatUI();
+  // Load messages for this conversation
+  try {
+    const resp = await fetch(`/api/conversations/${convId}`);
+    const conv = await resp.json();
+    pageTitle.textContent = conv.title || 'New Chat';
+    if (conv.messages && conv.messages.length > 0) {
+      document.getElementById('welcome').style.display = 'none';
+      conv.messages.forEach(m => appendMessage(m.role === 'user' ? 'user' : 'ai', m.content));
+    }
+    loadConversations();
+  } catch {
+    showToast('Failed to load conversation');
+  }
+}
+
+async function deleteConversation(convId) {
+  if (!confirm('Delete this conversation?')) return;
+  try {
+    await fetch(`/api/conversations/${convId}`, { method: 'DELETE' });
+    if (convId === currentConvId) {
+      await newChat();
+    } else {
+      loadConversations();
+    }
+    showToast('Deleted');
+  } catch { showToast('Delete failed'); }
+}
+
+async function renameConversation(convId) {
+  const name = prompt('Rename conversation:');
+  if (!name) return;
+  try {
+    await fetch(`/api/conversations/${convId}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: name }),
+    });
+    if (convId === currentConvId) pageTitle.textContent = name;
+    loadConversations();
+  } catch { showToast('Rename failed'); }
+}
+
+function clearChatUI() {
+  const w = document.getElementById('welcome');
+  chatContainer.innerHTML = '';
+  chatContainer.appendChild(w);
+  w.style.display = '';
+}
+
+// ══════════════════════════════════════════
+//  INIT — On page load / refresh
+// ══════════════════════════════════════════
+
+async function init() {
+  const savedId = localStorage.getItem('currentConvId');
+  if (savedId) {
+    // Check if that conversation exists and has messages
+    try {
+      const resp = await fetch(`/api/conversations/${savedId}`);
+      if (resp.ok) {
+        const conv = await resp.json();
+        if (conv.messages && conv.messages.length > 0) {
+          // Old conversation exists with messages → archive it and start fresh
+          await newChat();
+        } else {
+          // Empty conversation, reuse it
+          currentConvId = savedId;
+          pageTitle.textContent = conv.title || 'New Chat';
+        }
+      } else {
+        await newChat();
+      }
+    } catch {
+      await newChat();
+    }
+  } else {
+    await newChat();
+  }
+  loadConversations();
+}
+
+init();
+
+// ══════════════════════════════════════════
+//  RIGHT PANEL (Memory / Drafts)
+// ══════════════════════════════════════════
+
+function togglePanel(name) {
+  if (activePanel === name) { closePanel(); return; }
+  activePanel = name;
+  sidePanel.classList.add('open');
+  document.getElementById('btnMemory').classList.toggle('active', name === 'memory');
+  document.getElementById('btnDrafts').classList.toggle('active', name === 'drafts');
+  document.getElementById('btnProgress').classList.toggle('active', name === 'progress');
+  if (name === 'memory') loadMemoryPanel();
+  if (name === 'drafts') loadDraftsPanel();
+  if (name === 'progress') loadProgressPanel();
+}
+function closePanel() {
+  activePanel = null;
+  sidePanel.classList.remove('open');
+  document.getElementById('btnMemory').classList.remove('active');
+  document.getElementById('btnDrafts').classList.remove('active');
+  document.getElementById('btnProgress').classList.remove('active');
+}
+
+// ── Memory Panel ─────────────────────────
+async function loadMemoryPanel() {
+  sidePanel.innerHTML = '<div class="panel-header"><h3>🧠 Memory</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body"><p style="color:var(--text-dim)">Loading...</p></div>';
+  try {
+    const resp = await fetch('/api/memory/full');
+    const data = await resp.json();
+    renderMemoryPanel(data);
+  } catch { sidePanel.querySelector('.panel-body').innerHTML = '<p style="color:var(--red)">Failed to load memory.</p>'; }
+}
+
+function renderMemoryPanel(data) {
+  const fields = [
+    { key:'thesis_topic', label:'Topic', placeholder:'e.g. Federated Learning for IoT' },
+    { key:'research_area', label:'Area', placeholder:'e.g. Machine Learning' },
+    { key:'methodology', label:'Method', placeholder:'e.g. Deep Reinforcement Learning' },
+    { key:'supervisor', label:'Supervisor', placeholder:'e.g. Dr. Jane Smith' },
+    { key:'university', label:'University', placeholder:'e.g. MIT' },
+    { key:'deadline', label:'Deadline', placeholder:'e.g. June 2026' },
+  ];
+  const lists = [
+    { key:'discussed_papers', label:'Papers', textKey:'title', placeholder:'Add paper title...' },
+    { key:'key_decisions', label:'Key Decisions', textKey:'decision', placeholder:'Add decision...' },
+    { key:'custom_notes', label:'Notes', textKey:'note', placeholder:'Add a note...' },
+    { key:'progress_log', label:'Progress Log', textKey:'milestone', placeholder:'Add milestone...' },
+  ];
+  let html = '<div class="panel-header"><h3>🧠 Memory</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body">';
+  html += '<div class="mem-section"><div class="mem-section-title">Thesis Info</div>';
+  fields.forEach(f => {
+    const val = data[f.key] || '';
+    html += `<div class="mem-field"><label>${f.label}</label><input id="mem-${f.key}" value="${escHtml(val)}" placeholder="${f.placeholder}" onkeydown="if(event.key==='Enter')saveMemField('${f.key}')"><button class="mem-save-btn" onclick="saveMemField('${f.key}')">Save</button></div>`;
+  });
+  html += '</div>';
+  lists.forEach(l => {
+    const items = data[l.key] || [];
+    html += `<div class="mem-section"><div class="mem-section-title">${l.label} <span style="color:var(--text-dim);font-size:.7rem;text-transform:none">(${items.length})</span></div>`;
+    if (!items.length) html += `<div class="mem-empty">No ${l.label.toLowerCase()} yet.</div>`;
+    else {
+      html += '<ul class="mem-list">';
+      items.forEach((item, idx) => {
+        const text = item[l.textKey]||item.title||item.note||item.decision||item.milestone||'';
+        const date = item.added||item.date||'';
+        const ds = date ? new Date(date).toLocaleDateString() : '';
+        html += `<li class="mem-list-item"><div class="item-text">${escHtml(text)}${ds?`<div class="item-date">${ds}</div>`:''}</div><button class="item-del" title="Delete" onclick="deleteMemItem('${l.key}',${idx})">✕</button></li>`;
+      });
+      html += '</ul>';
+    }
+    html += `<div class="mem-add-row"><input class="mem-add-input" id="mem-add-${l.key}" placeholder="${l.placeholder}" onkeydown="if(event.key==='Enter')addMemItem('${l.key}')"><button class="mem-add-btn" onclick="addMemItem('${l.key}')">+ Add</button></div></div>`;
+  });
+  if (data.last_updated) html += `<div style="margin-top:16px;font-size:.72rem;color:var(--text-dim)">Last updated: ${new Date(data.last_updated).toLocaleString()}</div>`;
+  html += '</div>';
+  sidePanel.innerHTML = html;
+}
+
+async function saveMemField(field) {
+  const v = document.getElementById(`mem-${field}`).value.trim();
+  try { await fetch('/api/memory/field',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:v})}); showToast('Saved'); } catch { showToast('Failed to save'); }
+}
+async function deleteMemItem(listName,index) {
+  try { await fetch('/api/memory/item',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,index})}); loadMemoryPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
+}
+async function addMemItem(listName) {
+  const inp = document.getElementById(`mem-add-${listName}`);
+  const v = inp.value.trim(); if (!v) return;
+  try { await fetch('/api/memory/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,value:v})}); inp.value=''; loadMemoryPanel(); showToast('Added'); } catch { showToast('Failed'); }
+}
+
+// ── Drafts Panel ─────────────────────────
+async function loadDraftsPanel() {
+  sidePanel.innerHTML = '<div class="panel-header"><h3>📄 Drafts</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body"><p style="color:var(--text-dim)">Loading...</p></div>';
+  try { const resp = await fetch('/api/drafts'); const data = await resp.json(); renderDraftsPanel(data.drafts); }
+  catch { sidePanel.querySelector('.panel-body').innerHTML = '<p style="color:var(--red)">Failed to load drafts.</p>'; }
+}
+function renderDraftsPanel(drafts) {
+  let html = '<div class="panel-header"><h3>📄 Drafts</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body">';
+  if (!drafts.length) {
+    html += '<div class="draft-empty">No drafts yet.<br><br>Use <strong>/write &lt;chapter&gt;</strong> to generate and auto-save drafts.</div>';
+  } else {
+    drafts.forEach(d => {
+      const kb = (d.size/1024).toFixed(1);
+      const mod = d.modified ? new Date(d.modified).toLocaleString() : '';
+      const ext = d.name.split('.').pop().toUpperCase();
+      const icon = ext==='MD'?'📝':ext==='DOCX'?'📘':ext==='TEX'?'📐':'📄';
+      html += `<div class="draft-card"><div class="draft-card-header"><span class="draft-icon">${icon}</span><span class="draft-name">${escHtml(d.name)}</span></div><div class="draft-meta">${kb} KB${mod?' · '+mod:''}</div><div class="draft-actions"><button onclick="previewDraft('${escJs(d.name)}')">👁 Preview</button><button onclick="downloadDraft('${escJs(d.name)}')">⬇ Download</button><button onclick="renameDraft('${escJs(d.name)}')">✏️ Rename</button><button class="del-btn" onclick="deleteDraft('${escJs(d.name)}')">🗑 Delete</button></div></div>`;
+    });
+  }
+  html += '</div>';
+  sidePanel.innerHTML = html;
+}
+
+async function previewDraft(name) {
+  try {
+    const resp = await fetch(`/api/drafts/${encodeURIComponent(name)}/preview`);
+    const data = await resp.json();
+    document.getElementById('previewTitle').textContent = data.name;
+    try { document.getElementById('previewContent').innerHTML = marked.parse(data.content); }
+    catch { document.getElementById('previewContent').textContent = data.content; }
+    document.getElementById('previewModal').classList.add('show');
+  } catch { showToast('Failed to load preview'); }
+}
+function closePreview() { document.getElementById('previewModal').classList.remove('show'); }
+function downloadDraft(name) { const a=document.createElement('a'); a.href=`/api/drafts/${encodeURIComponent(name)}`; a.download=name; a.click(); }
+async function renameDraft(name) {
+  const nn = prompt('New file name:', name); if (!nn || nn===name) return;
+  try { const r=await fetch(`/api/drafts/${encodeURIComponent(name)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nn})}); if(r.ok){loadDraftsPanel();showToast('Renamed');}else{const d=await r.json();showToast(d.error||'Failed');}} catch{showToast('Failed');}
+}
+async function deleteDraft(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  try { await fetch(`/api/drafts/${encodeURIComponent(name)}`,{method:'DELETE'}); loadDraftsPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
+}
+
+// ══════════════════════════════════════════
+//  CHAT
+// ══════════════════════════════════════════
+
+async function ensureConversation() {
+  if (!currentConvId) {
+    const resp = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Chat' }),
+    });
+    const conv = await resp.json();
+    currentConvId = conv.id;
+    localStorage.setItem('currentConvId', currentConvId);
+  }
+}
+
+async function sendMessage(text) {
+  if (busy) return;
+  busy = true;
+  sendBtn.disabled = true;
+  document.getElementById('welcome').style.display = 'none';
+  await ensureConversation();
+
+  appendMessage('user', text);
+  const thinkingEl = appendThinking();
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, conversation_id: currentConvId }),
+    });
+    const data = await resp.json();
+    thinkingEl.remove();
+    if (data.error) appendMessage('error', data.error);
+    else {
+      appendMessage('ai', data.response);
+      if (text.startsWith('/write') && activePanel === 'drafts') loadDraftsPanel();
+    }
+    // Refresh sidebar to update title / message count
+    loadConversations();
+  } catch {
+    thinkingEl.remove();
+    appendMessage('error', 'Failed to connect to ThesisAI server.');
+  }
+  busy = false;
+  sendBtn.disabled = false;
+  messageInput.focus();
+}
+
+async function uploadPDF(input) {
+  const file = input.files[0]; if (!file) return;
+  input.value = '';
+  if (busy) return;
+  busy = true; sendBtn.disabled = true;
+  document.getElementById('welcome').style.display = 'none';
+  await ensureConversation();
+
+  appendMessage('user', `📄 Uploaded: ${file.name}`);
+  const thinkingEl = appendThinking();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('conversation_id', currentConvId);
+  try {
+    const resp = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
+    const data = await resp.json();
+    thinkingEl.remove();
+    if (data.error) appendMessage('error', data.error);
+    else appendMessage('ai', data.response);
+    loadConversations();
+  } catch {
+    thinkingEl.remove();
+    appendMessage('error', 'Failed to upload PDF.');
+  }
+  busy = false; sendBtn.disabled = false;
+}
+
+async function exportAs(format, content) {
+  try {
+    const resp = await fetch(`/api/export/${format}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, title: 'Thesis Draft' }),
+    });
+    if (!resp.ok) { const err = await resp.json(); showToast('Export failed: '+(err.error||'Unknown')); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ext = format==='word'?'docx':format==='latex'?'tex':'md';
+    a.href = url; a.download = `thesis_draft.${ext}`; a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported as .${ext}`);
+    if (activePanel === 'drafts') loadDraftsPanel();
+  } catch { showToast('Export failed'); }
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard'));
+}
+
+// ── Render Messages ─────────────────────
+
+function appendMessage(role, text) {
+  const wrapper = document.createElement('div'); wrapper.className = 'message';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar ' + (role==='user'?'user':'ai');
+  avatar.textContent = role==='user'?'You':'AI';
+  const content = document.createElement('div'); content.className = 'msg-content';
+  const bubble = document.createElement('div'); bubble.className = 'bubble';
+  if (role==='user') bubble.classList.add('user-bubble');
+  if (role==='error') bubble.classList.add('error-bubble');
+  if (role==='user') bubble.textContent = text;
+  else { try { bubble.innerHTML = marked.parse(text); } catch { bubble.textContent = text; } }
+  content.appendChild(bubble);
+
+  if (role==='ai' && text && text.length > 50) {
+    const bar = document.createElement('div'); bar.className = 'export-bar';
+    [['⬇ Word','word'],['⬇ LaTeX','latex'],['⬇ MD','markdown']].forEach(([lbl,fmt]) => {
+      const b=document.createElement('button'); b.className='export-btn'; b.innerHTML=lbl;
+      b.onclick=()=>exportAs(fmt,text); bar.appendChild(b);
+    });
+    const bc = document.createElement('button'); bc.className='export-btn';
+    bc.innerHTML='📋 Copy'; bc.onclick=()=>copyToClipboard(text); bar.appendChild(bc);
+    content.appendChild(bar);
+  }
+  wrapper.appendChild(avatar); wrapper.appendChild(content);
+  chatContainer.appendChild(wrapper);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  return wrapper;
+}
+
+function appendThinking() {
+  const wrapper = document.createElement('div'); wrapper.className = 'message';
+  const avatar = document.createElement('div'); avatar.className = 'avatar ai'; avatar.textContent = 'AI';
+  const bubble = document.createElement('div'); bubble.className = 'bubble';
+  bubble.innerHTML = '<div class="thinking"><span></span><span></span><span></span></div>';
+  const content = document.createElement('div'); content.className = 'msg-content';
+  content.appendChild(bubble);
+  wrapper.appendChild(avatar); wrapper.appendChild(content);
+  chatContainer.appendChild(wrapper);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  return wrapper;
+}
+
+// ── Helpers ──
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function escJs(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+document.getElementById('previewModal').addEventListener('click', function(e) { if(e.target===this) closePreview(); });
+
+// Close export dropdown when clicking elsewhere
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('exportDropdown');
+  if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+});
+
+// ══════════════════════════════════════════
+//  EXPORT DROPDOWN
+// ══════════════════════════════════════════
+
+function toggleExportDropdown() {
+  document.getElementById('exportDropdown').classList.toggle('open');
+}
+function closeExportDropdown() {
+  document.getElementById('exportDropdown').classList.remove('open');
+}
+
+// ══════════════════════════════════════════
+//  PROGRESS PANEL
+// ══════════════════════════════════════════
+
+async function loadProgressPanel() {
+  sidePanel.innerHTML = '<div class="panel-header"><h3>Progress</h3><button class="panel-close" onclick="closePanel()">&#10005;</button></div><div class="panel-body"><p style="color:var(--text-dim)">Loading...</p></div>';
+  try {
+    // Fetch memory + drafts to build the dashboard
+    const [memResp, draftsResp] = await Promise.all([
+      fetch('/api/memory/full'),
+      fetch('/api/drafts')
+    ]);
+    const mem = await memResp.json();
+    const draftsData = await draftsResp.json();
+    renderProgressPanel(mem, draftsData.drafts || []);
+  } catch {
+    sidePanel.querySelector('.panel-body').innerHTML = '<p style="color:var(--text-dim)">Failed to load progress.</p>';
+  }
+}
+
+function renderProgressPanel(mem, drafts) {
+  const draftNames = drafts.map(d => d.name.toLowerCase());
+  const papers = mem.discussed_papers || [];
+  const decisions = mem.key_decisions || [];
+  const progress = mem.progress_log || [];
+  const notes = mem.custom_notes || [];
+
+  // Checklist
+  const checks = [
+    ['Topic defined', !!mem.thesis_topic],
+    ['Research area set', !!mem.research_area],
+    ['Methodology chosen', !!mem.methodology],
+    ['Deadline set', !!mem.deadline],
+    ['Papers reviewed (3+)', papers.length >= 3],
+    ['Outline created', draftNames.some(f => f.includes('outline'))],
+    ['Introduction drafted', draftNames.some(f => f.includes('intro'))],
+    ['Literature review drafted', draftNames.some(f => f.includes('literature') || f.includes('lit_review'))],
+    ['Methodology drafted', draftNames.some(f => f.includes('method'))],
+    ['Abstract written', draftNames.some(f => f.includes('abstract'))],
+    ['References generated', draftNames.some(f => f.includes('reference') || f.includes('biblio'))],
+  ];
+  const done = checks.filter(c => c[1]).length;
+  const pct = Math.round((done / checks.length) * 100);
+
+  let html = '<div class="panel-header"><h3>Progress</h3><button class="panel-close" onclick="closePanel()">&#10005;</button></div><div class="panel-body">';
+
+  // Progress bar
+  html += `<div style="margin-bottom:20px"><div style="font-size:.82rem;margin-bottom:6px;color:var(--text)">${done}/${checks.length} completed (${pct}%)</div>`;
+  html += `<div style="background:var(--border);border-radius:6px;height:8px;overflow:hidden"><div style="background:#fff;height:100%;width:${pct}%;border-radius:6px;transition:width .3s"></div></div></div>`;
+
+  // Thesis info
+  html += '<div class="mem-section"><div class="mem-section-title">Thesis Overview</div>';
+  const infoFields = [
+    ['Topic', mem.thesis_topic],
+    ['Area', mem.research_area],
+    ['Method', mem.methodology],
+    ['Supervisor', mem.supervisor],
+    ['University', mem.university],
+    ['Deadline', mem.deadline],
+  ];
+  infoFields.forEach(([label, val]) => {
+    html += `<div style="display:flex;gap:8px;margin-bottom:4px;font-size:.82rem"><span style="color:var(--text-dim);width:80px;flex-shrink:0">${label}</span><span style="color:var(--text)">${val || '<span style="color:var(--text-dim);font-style:italic">not set</span>'}</span></div>`;
+  });
+
+  // Deadline countdown
+  if (mem.deadline) {
+    try {
+      const dl = new Date(mem.deadline);
+      if (!isNaN(dl)) {
+        const days = Math.ceil((dl - new Date()) / (1000*60*60*24));
+        if (days > 0) html += `<div style="font-size:.82rem;margin-top:6px;color:var(--text)">Days remaining: <strong>${days}</strong></div>`;
+        else if (days === 0) html += `<div style="font-size:.82rem;margin-top:6px;color:var(--text)"><strong>Deadline is TODAY!</strong></div>`;
+        else html += `<div style="font-size:.82rem;margin-top:6px;color:var(--text)">Overdue by <strong>${Math.abs(days)}</strong> days</div>`;
+      }
+    } catch {}
+  }
+  html += '</div>';
+
+  // Checklist
+  html += '<div class="mem-section"><div class="mem-section-title">Checklist</div>';
+  checks.forEach(([label, isDone]) => {
+    const mark = isDone ? '&#10003;' : '&#9744;';
+    const style = isDone ? 'color:var(--text)' : 'color:var(--text-dim)';
+    html += `<div style="font-size:.82rem;margin-bottom:4px;${style}">${mark} ${label}</div>`;
+  });
+  html += '</div>';
+
+  // Stats
+  html += '<div class="mem-section"><div class="mem-section-title">Stats</div>';
+  html += `<div style="font-size:.82rem;color:var(--text-dim);line-height:1.8">`;
+  html += `Papers reviewed: <span style="color:var(--text)">${papers.length}</span><br>`;
+  html += `Drafts saved: <span style="color:var(--text)">${drafts.length}</span><br>`;
+  html += `Decisions made: <span style="color:var(--text)">${decisions.length}</span><br>`;
+  html += `Progress milestones: <span style="color:var(--text)">${progress.length}</span><br>`;
+  html += `Notes: <span style="color:var(--text)">${notes.length}</span>`;
+  html += `</div></div>`;
+
+  // Recent progress
+  if (progress.length) {
+    html += '<div class="mem-section"><div class="mem-section-title">Recent Milestones</div>';
+    progress.slice(-5).reverse().forEach(p => {
+      let ds = '';
+      try { ds = new Date(p.date).toLocaleDateString(); } catch {}
+      html += `<div style="font-size:.82rem;color:var(--text);margin-bottom:4px">${p.milestone || ''}${ds ? ` <span style="color:var(--text-dim);font-size:.72rem">(${ds})</span>` : ''}</div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  sidePanel.innerHTML = html;
+}
+
+// ══════════════════════════════════════════
+//  MULTI-PDF UPLOAD
+// ══════════════════════════════════════════
+
+async function uploadMultiplePDFs(input) {
+  const files = Array.from(input.files);
+  input.value = '';
+  if (!files.length || busy) return;
+  busy = true; sendBtn.disabled = true;
+  document.getElementById('welcome').style.display = 'none';
+  await ensureConversation();
+
+  const names = files.map(f => f.name).join(', ');
+  appendMessage('user', `Uploaded ${files.length} PDFs: ${names}`);
+  const thinkingEl = appendThinking();
+
+  const formData = new FormData();
+  files.forEach(f => formData.append('files', f));
+  formData.append('conversation_id', currentConvId);
+
+  try {
+    const resp = await fetch('/api/upload-pdfs', { method: 'POST', body: formData });
+    const data = await resp.json();
+    thinkingEl.remove();
+    if (data.error) appendMessage('error', data.error);
+    else appendMessage('ai', data.response);
+    loadConversations();
+  } catch {
+    thinkingEl.remove();
+    appendMessage('error', 'Failed to upload PDFs.');
+  }
+  busy = false; sendBtn.disabled = false;
+}
+
+// ══════════════════════════════════════════
+//  CONVERSATION EXPORT
+// ══════════════════════════════════════════
+
+async function exportConversation(format) {
+  if (!currentConvId) { showToast('No conversation to export'); return; }
+  try {
+    const resp = await fetch(`/api/conversations/${currentConvId}/export/${format}`);
+    if (!resp.ok) {
+      const err = await resp.json();
+      showToast('Export failed: ' + (err.error || 'Unknown'));
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ext = format === 'word' ? 'docx' : format === 'latex' ? 'tex' : 'md';
+    a.href = url; a.download = `conversation.${ext}`; a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Conversation exported as .${ext}`);
+  } catch { showToast('Export failed'); }
+}
+
+// ══════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ══════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  // Ctrl+Shift+N — New chat
+  if (e.ctrlKey && e.shiftKey && e.key === 'N') { e.preventDefault(); newChat(); }
+  // Ctrl+Shift+M — Toggle memory panel
+  if (e.ctrlKey && e.shiftKey && e.key === 'M') { e.preventDefault(); togglePanel('memory'); }
+  // Ctrl+Shift+D — Toggle drafts panel
+  if (e.ctrlKey && e.shiftKey && e.key === 'D') { e.preventDefault(); togglePanel('drafts'); }
+  // Escape — Close panels/modals
+  if (e.key === 'Escape') { closePanel(); closePreview(); }
+  // Ctrl+Shift+E — Export conversation
+  if (e.ctrlKey && e.shiftKey && e.key === 'E') { e.preventDefault(); exportConversation('markdown'); }
+});
+</script>
+</body>
+</html>

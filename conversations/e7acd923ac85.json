@@ -1,0 +1,16 @@
+{
+  "id": "e7acd923ac85",
+  "title": "New Chat",
+  "created": "2026-03-01T20:20:57.287187",
+  "updated": "2026-03-01T20:24:33.740829",
+  "messages": [
+    {
+      "role": "user",
+      "content": "/help"
+    },
+    {
+      "role": "ai",
+      "content": "**Commands:**\n- `/topic <topic>` — Set thesis topic\n- `/area <area>` — Set research area\n- `/method <method>` — Set methodology\n- `/outline` — Generate a full thesis outline\n- `/write <chapter>` — Draft a chapter (e.g. `/write Literature Review`)\n- `/memory` — View stored context\n- `/reset` — Clear conversation (memory persists)\n- `/help` — Show this help\n\n**Other features:**\n- **Upload PDF** — Click 📎 to upload and analyze a research paper\n- **Export** — Click ⬇ on any AI response to download as Word, LaTeX, or Markdown\n- **Drafts auto-save** — Chapter drafts from `/write` are saved to the `drafts/` folder"
+    }
+  ]
+}
