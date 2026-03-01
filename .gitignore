@@ -25,6 +25,9 @@ Thumbs.db
 # Drafts output
 drafts/
 
-# Memory/chat files (optional - remove if you want to track these)
+# Conversations (private data)
+conversations/
+
+# Memory/chat files
 memory.json
 chat_history.json
