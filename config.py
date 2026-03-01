@@ -11,6 +11,10 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_MODEL = os.getenv("GITHUB_MODEL", "gpt-4o-mini")
 GITHUB_BASE_URL = "https://models.inference.ai.azure.com"
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "memory.json")
+_IS_VERCEL = os.environ.get("VERCEL", "") == "1"
+if _IS_VERCEL:
+    MEMORY_FILE = os.path.join("/tmp", "memory.json")
+else:
+    MEMORY_FILE = os.path.join(os.path.dirname(__file__), "memory.json")
 MAX_AGENT_ITERATIONS = 15
 MAX_CONVERSATION_HISTORY = 50

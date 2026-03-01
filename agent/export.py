@@ -20,12 +20,19 @@ except ImportError:
     HAS_DOCX = False
 
 
-DRAFTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "drafts")
+_IS_VERCEL = os.environ.get("VERCEL", "") == "1"
+if _IS_VERCEL:
+    DRAFTS_DIR = os.path.join("/tmp", "drafts")
+else:
+    DRAFTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "drafts")
 
 
 def ensure_drafts_dir() -> str:
     """Create drafts directory if it doesn't exist."""
-    os.makedirs(DRAFTS_DIR, exist_ok=True)
+    try:
+        os.makedirs(DRAFTS_DIR, exist_ok=True)
+    except OSError:
+        pass
     return DRAFTS_DIR
 
 

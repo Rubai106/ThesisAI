@@ -51,8 +51,11 @@ class MemoryManager:
 
     def save(self) -> None:
         self.data["last_updated"] = datetime.now().isoformat()
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2, ensure_ascii=False)
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass  # Read-only filesystem (e.g., Vercel)
 
     # ── setters ──────────────────────────────────────────────────
 

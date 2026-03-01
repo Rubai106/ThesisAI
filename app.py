@@ -32,8 +32,16 @@ last_response: str = ""
 
 # ── Conversations Persistence ────────────────────────────────────
 
-CONVERSATIONS_DIR = os.path.join(os.path.dirname(__file__), "conversations")
-os.makedirs(CONVERSATIONS_DIR, exist_ok=True)
+# On Vercel, use /tmp since the main filesystem is read-only
+_IS_VERCEL = os.environ.get("VERCEL", "") == "1"
+if _IS_VERCEL:
+    CONVERSATIONS_DIR = os.path.join("/tmp", "conversations")
+else:
+    CONVERSATIONS_DIR = os.path.join(os.path.dirname(__file__), "conversations")
+try:
+    os.makedirs(CONVERSATIONS_DIR, exist_ok=True)
+except OSError:
+    pass
 
 
 def _conv_path(conv_id: str) -> str:
