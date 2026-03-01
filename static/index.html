@@ -932,8 +932,8 @@ async function loadProgressPanel() {
   try {
     // Fetch memory + drafts to build the dashboard
     const [memResp, draftsResp] = await Promise.all([
-      fetch('/api/memory/full'),
-      fetch('/api/drafts')
+      apiFetch('/api/memory/full'),
+      apiFetch('/api/drafts')
     ]);
     const mem = await memResp.json();
     const draftsData = await draftsResp.json();

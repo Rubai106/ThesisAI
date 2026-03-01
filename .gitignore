@@ -31,3 +31,4 @@ conversations/
 # Memory/chat files
 memory.json
 chat_history.json
+.vercel
