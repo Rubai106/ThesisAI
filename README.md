@@ -116,13 +116,6 @@ Each user can set their **own API key** via the **Settings** button in the UI. T
 | `/reset` | Clear conversation (memory persists) |
 | `/memory` | View stored thesis context |
 
-## Deploy to Vercel
-
-1. Push to GitHub
-2. Import the repo on [vercel.com](https://vercel.com)
-3. Set `GITHUB_TOKEN` in Vercel Environment Variables
-4. Deploy — it auto-deploys on every push to `main`
-
 ## Tech Stack
 
 - **Backend:** Python, Flask, OpenAI SDK
