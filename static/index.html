@@ -300,6 +300,38 @@
   .dropdown-menu button:hover { background:var(--surface2); color:var(--text) }
   .dropdown-menu .dd-label { font-size:.7rem; color:var(--text-dim); padding:8px 16px 4px;
     text-transform:uppercase; letter-spacing:.5px; font-weight:600 }
+
+  /* Settings Modal */
+  .settings-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200;
+    display:none; align-items:center; justify-content:center }
+  .settings-overlay.show { display:flex }
+  .settings-box { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    width:90%; max-width:520px; max-height:85vh; display:flex; flex-direction:column }
+  .settings-header { padding:16px 20px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between }
+  .settings-header h3 { font-size:1rem; color:var(--text) }
+  .settings-body { flex:1; overflow-y:auto; padding:20px }
+  .settings-field { margin-bottom:16px }
+  .settings-field label { display:block; font-size:.82rem; color:var(--text-dim); margin-bottom:6px; font-weight:600 }
+  .settings-field select,
+  .settings-field input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; color:var(--text); font-size:.88rem; font-family:inherit; outline:none;
+    transition:border-color .15s }
+  .settings-field select:focus,
+  .settings-field input:focus { border-color:#fff }
+  .settings-field input::placeholder { color:var(--text-dim) }
+  .settings-field .field-hint { font-size:.72rem; color:var(--text-dim); margin-top:4px }
+  .settings-status { font-size:.82rem; padding:10px 14px; border-radius:8px; margin-bottom:14px;
+    border:1px solid var(--border) }
+  .settings-status.connected { background:#0a1a0a; border-color:#1a3a1a; color:#6f6 }
+  .settings-status.default { background:#1a1a0a; border-color:#3a3a1a; color:#cc6 }
+  .settings-actions { display:flex; gap:8px; margin-top:20px }
+  .settings-actions button { flex:1; padding:10px; border:none; border-radius:8px;
+    cursor:pointer; font-size:.85rem; font-weight:600; transition:all .15s }
+  .settings-actions .save-btn { background:#fff; color:#000 }
+  .settings-actions .save-btn:hover { background:#ccc }
+  .settings-actions .clear-btn { background:var(--border); color:var(--text-dim) }
+  .settings-actions .clear-btn:hover { background:#555; color:#fff }
 </style>
 </head>
 <body>
@@ -337,6 +369,7 @@
         </div>
       </div>
       <button onclick="sendMessage('/help')" title="Show all available commands">Help</button>
+      <button onclick="openSettings()" title="Configure your API key and provider">Settings</button>
     </div>
   </div>
 
@@ -400,6 +433,56 @@
       <button class="panel-close" onclick="closePreview()">✕</button>
     </div>
     <div class="modal-content" id="previewContent"></div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="settings-overlay" id="settingsModal">
+  <div class="settings-box">
+    <div class="settings-header">
+      <h3>API Settings</h3>
+      <button class="panel-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="settings-body">
+      <div id="settingsStatus" class="settings-status default">Loading...</div>
+
+      <div class="settings-field">
+        <label>Provider</label>
+        <select id="settingsProvider" onchange="onProviderChange()">
+          <option value="github">GitHub Models (free, limited)</option>
+          <option value="openai">OpenAI</option>
+          <option value="groq">Groq (free, generous)</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="together">Together AI</option>
+          <option value="ollama">Ollama (local, unlimited)</option>
+          <option value="custom">Custom OpenAI-compatible</option>
+        </select>
+        <div class="field-hint">Choose your LLM provider. Each user sets their own key.</div>
+      </div>
+
+      <div class="settings-field" id="apiKeyField">
+        <label>API Key</label>
+        <input type="password" id="settingsApiKey" placeholder="Paste your API key here...">
+        <div class="field-hint" id="apiKeyHint">Your key is stored per-user on the server. Never shared.</div>
+      </div>
+
+      <div class="settings-field">
+        <label>Base URL</label>
+        <input type="text" id="settingsBaseUrl" placeholder="Auto-filled from provider">
+        <div class="field-hint">Only change this if you know what you're doing.</div>
+      </div>
+
+      <div class="settings-field">
+        <label>Model</label>
+        <input type="text" id="settingsModel" placeholder="Auto-filled from provider">
+        <div class="field-hint">e.g. gpt-4o-mini, llama-3.3-70b-versatile, llama3.1</div>
+      </div>
+
+      <div class="settings-actions">
+        <button class="save-btn" onclick="saveSettings()">Save Settings</button>
+        <button class="clear-btn" onclick="clearSettings()">Reset to Default</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1104,10 +1187,130 @@ document.addEventListener('keydown', e => {
   // Ctrl+Shift+D — Toggle drafts panel
   if (e.ctrlKey && e.shiftKey && e.key === 'D') { e.preventDefault(); togglePanel('drafts'); }
   // Escape — Close panels/modals
-  if (e.key === 'Escape') { closePanel(); closePreview(); }
+  if (e.key === 'Escape') { closePanel(); closePreview(); closeSettings(); }
   // Ctrl+Shift+E — Export conversation
   if (e.ctrlKey && e.shiftKey && e.key === 'E') { e.preventDefault(); exportConversation('markdown'); }
+  // Ctrl+, — Open settings
+  if (e.ctrlKey && e.key === ',') { e.preventDefault(); openSettings(); }
 });
+
+// ════════════════════════════════════════════
+//  API KEY SETTINGS
+// ════════════════════════════════════════════
+
+let _providerDefaults = {};
+
+async function openSettings() {
+  document.getElementById('settingsModal').classList.add('show');
+  // Load current settings
+  try {
+    const [settResp, provResp] = await Promise.all([
+      apiFetch('/api/settings'),
+      apiFetch('/api/settings/providers'),
+    ]);
+    const sett = await settResp.json();
+    const provData = await provResp.json();
+
+    // Build provider defaults map
+    (provData.providers || []).forEach(p => {
+      _providerDefaults[p.id] = { base_url: p.base_url, model: p.model };
+    });
+
+    document.getElementById('settingsProvider').value = sett.provider || 'github';
+    document.getElementById('settingsApiKey').value = '';
+    document.getElementById('settingsApiKey').placeholder = sett.api_key_set ? `Current: ${sett.api_key_masked} (leave blank to keep)` : 'Paste your API key here...';
+    document.getElementById('settingsBaseUrl').value = sett.base_url || '';
+    document.getElementById('settingsModel').value = sett.model || '';
+
+    const status = document.getElementById('settingsStatus');
+    if (sett.api_key_set) {
+      status.className = 'settings-status connected';
+      status.textContent = `Your own API key is active (${sett.provider}). You have your own quota.`;
+    } else {
+      status.className = 'settings-status default';
+      status.textContent = 'Using server default key. Set your own key for independent quota.';
+    }
+
+    onProviderChange();
+  } catch {
+    document.getElementById('settingsStatus').textContent = 'Failed to load settings.';
+  }
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('show');
+}
+document.getElementById('settingsModal').addEventListener('click', function(e) { if(e.target===this) closeSettings(); });
+
+function onProviderChange() {
+  const provider = document.getElementById('settingsProvider').value;
+  const defaults = _providerDefaults[provider] || {};
+  const baseUrlInput = document.getElementById('settingsBaseUrl');
+  const modelInput = document.getElementById('settingsModel');
+  const apiKeyField = document.getElementById('apiKeyField');
+  const apiKeyHint = document.getElementById('apiKeyHint');
+
+  // Set placeholders from provider defaults
+  baseUrlInput.placeholder = defaults.base_url || 'Enter base URL';
+  modelInput.placeholder = defaults.model || 'Enter model name';
+
+  // Ollama doesn't need an API key
+  if (provider === 'ollama') {
+    apiKeyField.style.display = 'none';
+    apiKeyHint.textContent = 'Ollama runs locally — no API key needed.';
+  } else {
+    apiKeyField.style.display = '';
+    apiKeyHint.textContent = 'Your key is stored per-user on the server. Never shared.';
+  }
+}
+
+async function saveSettings() {
+  const provider = document.getElementById('settingsProvider').value;
+  const apiKey = document.getElementById('settingsApiKey').value.trim();
+  const baseUrl = document.getElementById('settingsBaseUrl').value.trim();
+  const model = document.getElementById('settingsModel').value.trim();
+
+  const body = { provider };
+  if (apiKey) body.api_key = apiKey;
+  else {
+    // Keep existing key if user didn't type a new one
+    // We send an empty string only if they explicitly want to clear it
+  }
+  if (baseUrl) body.base_url = baseUrl;
+  if (model) body.model = model;
+
+  // If user entered a new key, always send it
+  if (apiKey) body.api_key = apiKey;
+
+  try {
+    const resp = await apiFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(data.message || 'Settings saved');
+      closeSettings();
+    } else {
+      showToast(data.error || 'Failed to save settings');
+    }
+  } catch {
+    showToast('Failed to save settings');
+  }
+}
+
+async function clearSettings() {
+  if (!confirm('Reset to server default API key?')) return;
+  try {
+    const resp = await apiFetch('/api/settings', { method: 'DELETE' });
+    const data = await resp.json();
+    showToast(data.message || 'Settings cleared');
+    closeSettings();
+  } catch {
+    showToast('Failed to clear settings');
+  }
+}
 </script>
 </body>
 </html>

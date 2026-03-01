@@ -9,7 +9,7 @@ load_dotenv()
 # Get a token at https://github.com/settings/tokens
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_MODEL = os.getenv("GITHUB_MODEL", "gpt-4o-mini")
-GITHUB_BASE_URL = "https://models.inference.ai.azure.com"
+GITHUB_BASE_URL = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
 
 _IS_VERCEL = os.environ.get("VERCEL", "") == "1"
 if _IS_VERCEL:

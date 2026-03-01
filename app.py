@@ -153,11 +153,75 @@ def _append_chat(user_id: str, conv_id: str, user_msg: str, ai_msg: str) -> None
     _save_conversation(user_id, conv)
 
 
+# ── Per-User API Key Storage ─────────────────────────────────────
+
+_PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+    "github": {"base_url": "https://models.inference.ai.azure.com", "model": "gpt-4o-mini"},
+    "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
+    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini"},
+    "together": {"base_url": "https://api.together.xyz/v1", "model": "meta-llama/Llama-3-70b-chat-hf"},
+    "ollama": {"base_url": "http://localhost:11434/v1", "model": "llama3.1"},
+    "custom": {"base_url": "", "model": ""},
+}
+
+
+def _user_settings_file(user_id: str) -> str:
+    """Return the settings JSON path for a given user."""
+    d = os.path.join(_BASE_DATA_DIR, "user_data", user_id)
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, "settings.json")
+
+
+def _load_user_settings(user_id: str) -> dict:
+    """Load per-user settings (API key, provider, model)."""
+    path = _user_settings_file(user_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {}
+
+
+def _save_user_settings(user_id: str, settings: dict) -> None:
+    """Save per-user settings to disk."""
+    path = _user_settings_file(user_id)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+    except IOError:
+        pass
+
+
 def get_agent(user_id: str) -> ThesisAI:
-    """Return (or create) a per-user agent instance."""
+    """Return (or create) a per-user agent instance using their own API key."""
+    settings = _load_user_settings(user_id)
+    api_key = settings.get("api_key", "") or None
+    base_url = settings.get("base_url", "") or None
+    model = settings.get("model", "") or None
+
     if user_id not in _agents:
         mem_file = _user_memory_file(user_id)
-        _agents[user_id] = ThesisAI(memory_file=mem_file)
+        _agents[user_id] = ThesisAI(
+            memory_file=mem_file,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+        )
+    else:
+        # If settings changed, update the existing agent's client
+        agent = _agents[user_id]
+        current_key = getattr(agent, "_api_key", None)
+        current_url = getattr(agent, "_base_url", None)
+        new_key = api_key or config.GITHUB_TOKEN
+        new_url = base_url or config.GITHUB_BASE_URL
+        if current_key != new_key or current_url != new_url:
+            agent.update_client(new_key, new_url, model)
     return _agents[user_id]
 
 
@@ -166,6 +230,84 @@ def get_agent(user_id: str) -> ThesisAI:
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
+
+
+# ── API Key Settings ─────────────────────────────────────────────
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    """Return (masked) API key settings for the current user."""
+    uid = _get_user_id()
+    settings = _load_user_settings(uid)
+    api_key = settings.get("api_key", "")
+    return jsonify({
+        "provider": settings.get("provider", "github"),
+        "api_key_set": bool(api_key),
+        "api_key_masked": (api_key[:4] + "..." + api_key[-4:]) if len(api_key) > 8 else ("****" if api_key else ""),
+        "base_url": settings.get("base_url", ""),
+        "model": settings.get("model", ""),
+    })
+
+
+@app.route("/api/settings", methods=["PUT"])
+def save_settings():
+    """Save per-user API key and provider settings."""
+    uid = _get_user_id()
+    data = request.get_json(force=True)
+    provider = data.get("provider", "github").strip().lower()
+    api_key = data.get("api_key", "").strip()
+    base_url = data.get("base_url", "").strip()
+    model = data.get("model", "").strip()
+
+    # Preserve existing key if user didn't send a new one
+    existing = _load_user_settings(uid)
+    if not api_key and "api_key" not in data:
+        api_key = existing.get("api_key", "")
+
+    # Apply provider defaults if base_url / model not explicitly set
+    defaults = _PROVIDER_DEFAULTS.get(provider, {})
+    if not base_url:
+        base_url = defaults.get("base_url", "")
+    if not model:
+        model = defaults.get("model", "")
+
+    settings = {
+        "provider": provider,
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model,
+    }
+    _save_user_settings(uid, settings)
+
+    # Force agent to pick up new settings on next call
+    if uid in _agents:
+        del _agents[uid]
+
+    return jsonify({"status": "ok", "message": "Settings saved. Your personal API key is now active."})
+
+
+@app.route("/api/settings", methods=["DELETE"])
+def clear_settings():
+    """Remove per-user API key — revert to server default."""
+    uid = _get_user_id()
+    _save_user_settings(uid, {})
+    if uid in _agents:
+        del _agents[uid]
+    return jsonify({"status": "ok", "message": "Settings cleared. Using server default API key."})
+
+
+@app.route("/api/settings/providers", methods=["GET"])
+def list_providers():
+    """Return available provider presets."""
+    providers = []
+    for name, defaults in _PROVIDER_DEFAULTS.items():
+        providers.append({
+            "id": name,
+            "label": name.replace("_", " ").title(),
+            "base_url": defaults["base_url"],
+            "model": defaults["model"],
+        })
+    return jsonify({"providers": providers})
 
 
 @app.route("/api/chat", methods=["POST"])
