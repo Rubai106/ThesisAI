@@ -16,13 +16,13 @@ from agent.tools import TOOL_SCHEMAS, execute_tool
 class ThesisAI:
     """Autonomous research-assistant agent with tool-use and persistent memory."""
 
-    def __init__(self):
+    def __init__(self, memory_file: str | None = None):
         self.client = OpenAI(
             api_key=config.GITHUB_TOKEN,
             base_url=config.GITHUB_BASE_URL,
         )
         self.model = config.GITHUB_MODEL
-        self.memory = MemoryManager()
+        self.memory = MemoryManager(filepath=memory_file)
         self.conversation: list[dict[str, Any]] = []
         self._rebuild_system_message()
 

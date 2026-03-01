@@ -18,40 +18,71 @@ from agent.export import (
     export_to_latex,
     export_conversation,
     generate_bibliography_file,
-    ensure_drafts_dir,
-    DRAFTS_DIR,
 )
 
 app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB upload limit
 
-# Single shared agent instance (per-process; fine for local use)
-agent: ThesisAI | None = None
-# Store last AI response for export
-last_response: str = ""
+# Per-user agent instances and last responses
+_agents: dict[str, ThesisAI] = {}
+_last_responses: dict[str, str] = {}
+
+# ── User ID helper ───────────────────────────────────────────────
+
+import re as _re
+
+def _get_user_id() -> str:
+    """Extract a sanitised user ID from the X-User-ID header."""
+    uid = request.headers.get("X-User-ID", "default")
+    # Sanitise: allow only alphanumeric and hyphens
+    uid = _re.sub(r"[^a-zA-Z0-9\-]", "", uid)[:64]
+    return uid or "default"
 
 # ── Conversations Persistence ────────────────────────────────────
 
 # On Vercel, use /tmp since the main filesystem is read-only
 _IS_VERCEL = os.environ.get("VERCEL", "") == "1"
-if _IS_VERCEL:
-    CONVERSATIONS_DIR = os.path.join("/tmp", "conversations")
-else:
-    CONVERSATIONS_DIR = os.path.join(os.path.dirname(__file__), "conversations")
-try:
-    os.makedirs(CONVERSATIONS_DIR, exist_ok=True)
-except OSError:
-    pass
+_BASE_DATA_DIR = "/tmp" if _IS_VERCEL else os.path.dirname(__file__)
 
 
-def _conv_path(conv_id: str) -> str:
+def _user_conversations_dir(user_id: str) -> str:
+    """Return (and create) a per-user conversations directory."""
+    d = os.path.join(_BASE_DATA_DIR, "user_data", user_id, "conversations")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def _user_drafts_dir(user_id: str) -> str:
+    """Return (and create) a per-user drafts directory."""
+    d = os.path.join(_BASE_DATA_DIR, "user_data", user_id, "drafts")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def _user_memory_file(user_id: str) -> str:
+    """Return the memory JSON path for a given user."""
+    d = os.path.join(_BASE_DATA_DIR, "user_data", user_id)
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, "memory.json")
+
+
+def _conv_path(user_id: str, conv_id: str) -> str:
     """Return the file path for a conversation."""
-    return os.path.join(CONVERSATIONS_DIR, f"{conv_id}.json")
+    return os.path.join(_user_conversations_dir(user_id), f"{conv_id}.json")
 
 
-def _load_conversation(conv_id: str) -> dict | None:
+def _load_conversation(user_id: str, conv_id: str) -> dict | None:
     """Load a single conversation by ID."""
-    path = _conv_path(conv_id)
+    path = _conv_path(user_id, conv_id)
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -61,16 +92,16 @@ def _load_conversation(conv_id: str) -> dict | None:
     return None
 
 
-def _save_conversation(conv: dict) -> None:
+def _save_conversation(user_id: str, conv: dict) -> None:
     """Save a conversation to disk."""
     try:
-        with open(_conv_path(conv["id"]), "w", encoding="utf-8") as f:
+        with open(_conv_path(user_id, conv["id"]), "w", encoding="utf-8") as f:
             json.dump(conv, f, ensure_ascii=False, indent=2)
     except IOError:
         pass
 
 
-def _create_conversation(title: str = "New Chat") -> dict:
+def _create_conversation(user_id: str, title: str = "New Chat") -> dict:
     """Create a new conversation and return it."""
     conv = {
         "id": uuid.uuid4().hex[:12],
@@ -79,17 +110,18 @@ def _create_conversation(title: str = "New Chat") -> dict:
         "updated": datetime.now().isoformat(),
         "messages": [],
     }
-    _save_conversation(conv)
+    _save_conversation(user_id, conv)
     return conv
 
 
-def _list_conversations() -> list[dict]:
+def _list_conversations(user_id: str) -> list[dict]:
     """List all conversations sorted by last update (newest first)."""
     convs = []
-    for fname in os.listdir(CONVERSATIONS_DIR):
+    conv_dir = _user_conversations_dir(user_id)
+    for fname in os.listdir(conv_dir):
         if not fname.endswith(".json"):
             continue
-        path = os.path.join(CONVERSATIONS_DIR, fname)
+        path = os.path.join(conv_dir, fname)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -106,11 +138,11 @@ def _list_conversations() -> list[dict]:
     return convs
 
 
-def _append_chat(conv_id: str, user_msg: str, ai_msg: str) -> None:
+def _append_chat(user_id: str, conv_id: str, user_msg: str, ai_msg: str) -> None:
     """Append a user/AI message pair to a conversation."""
-    conv = _load_conversation(conv_id)
+    conv = _load_conversation(user_id, conv_id)
     if conv is None:
-        conv = _create_conversation()
+        conv = _create_conversation(user_id)
         conv["id"] = conv_id  # keep requested ID
     conv["messages"].append({"role": "user", "content": user_msg})
     conv["messages"].append({"role": "ai", "content": ai_msg})
@@ -118,14 +150,15 @@ def _append_chat(conv_id: str, user_msg: str, ai_msg: str) -> None:
     if conv["title"] == "New Chat" and user_msg and not user_msg.startswith("/"):
         conv["title"] = user_msg[:60] + ("..." if len(user_msg) > 60 else "")
     conv["updated"] = datetime.now().isoformat()
-    _save_conversation(conv)
+    _save_conversation(user_id, conv)
 
 
-def get_agent() -> ThesisAI:
-    global agent
-    if agent is None:
-        agent = ThesisAI()
-    return agent
+def get_agent(user_id: str) -> ThesisAI:
+    """Return (or create) a per-user agent instance."""
+    if user_id not in _agents:
+        mem_file = _user_memory_file(user_id)
+        _agents[user_id] = ThesisAI(memory_file=mem_file)
+    return _agents[user_id]
 
 
 # ── Routes ───────────────────────────────────────────────────────
@@ -137,7 +170,7 @@ def index():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    global last_response
+    uid = _get_user_id()
     data = request.get_json(force=True)
     user_message = data.get("message", "").strip()
     conv_id = data.get("conversation_id", "").strip()
@@ -146,14 +179,14 @@ def chat():
     if not conv_id:
         return jsonify({"error": "No conversation_id"}), 400
 
-    ai = get_agent()
+    ai = get_agent(uid)
 
     # Handle slash commands server-side
     if user_message.startswith("/"):
-        result = _handle_command(user_message, ai)
+        result = _handle_command(user_message, ai, uid)
         if result is not None:
-            last_response = result
-            _append_chat(conv_id, user_message, result)
+            _last_responses[uid] = result
+            _append_chat(uid, conv_id, user_message, result)
             return jsonify({"response": result})
         # result is None → route /outline, /write, and other commands through the AI agent
         parts = user_message.strip().split(maxsplit=1)
@@ -232,36 +265,37 @@ def chat():
         else:
             ai_prompt = user_message
 
+        drafts_dir = _user_drafts_dir(uid)
         try:
             response = ai.chat(ai_prompt)
-            last_response = response
-            _append_chat(conv_id, user_message, response)
+            _last_responses[uid] = response
+            _append_chat(uid, conv_id, user_message, response)
 
             # Auto-save chapter drafts and other generated content
             if keyword == "/write" and response:
                 try:
                     safe_name = arg.replace(" ", "_").lower()
-                    save_draft_markdown(response, f"{safe_name}.md")
+                    save_draft_markdown(response, f"{safe_name}.md", drafts_dir=drafts_dir)
                 except Exception:
                     pass
             elif keyword == "/abstract" and response:
                 try:
-                    save_draft_markdown(response, "abstract.md")
+                    save_draft_markdown(response, "abstract.md", drafts_dir=drafts_dir)
                 except Exception:
                     pass
             elif keyword in ("/references", "/bibliography") and response:
                 try:
-                    save_draft_markdown(response, "references.md")
+                    save_draft_markdown(response, "references.md", drafts_dir=drafts_dir)
                 except Exception:
                     pass
             elif keyword in ("/timeline", "/schedule") and response:
                 try:
-                    save_draft_markdown(response, "research_timeline.md")
+                    save_draft_markdown(response, "research_timeline.md", drafts_dir=drafts_dir)
                 except Exception:
                     pass
             elif keyword in ("/viva", "/defense") and response:
                 try:
-                    save_draft_markdown(response, "viva_questions.md")
+                    save_draft_markdown(response, "viva_questions.md", drafts_dir=drafts_dir)
                 except Exception:
                     pass
 
@@ -271,8 +305,8 @@ def chat():
 
     try:
         response = ai.chat(user_message)
-        last_response = response
-        _append_chat(conv_id, user_message, response)
+        _last_responses[uid] = response
+        _append_chat(uid, conv_id, user_message, response)
         return jsonify({"response": response})
     except Exception as exc:
         err = str(exc)
@@ -285,7 +319,7 @@ def chat():
 
 @app.route("/api/upload-pdf", methods=["POST"])
 def upload_pdf():
-    global last_response
+    uid = _get_user_id()
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -294,11 +328,14 @@ def upload_pdf():
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Please upload a PDF file"}), 400
 
-    ai = get_agent()
+    ai = get_agent(uid)
 
     # Save temporarily
-    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
+    upload_dir = os.path.join(_BASE_DATA_DIR, "user_data", uid, "uploads")
+    try:
+        os.makedirs(upload_dir, exist_ok=True)
+    except OSError:
+        pass
     filepath = os.path.join(upload_dir, file.filename)
     file.save(filepath)
 
@@ -322,9 +359,9 @@ def upload_pdf():
             f"7. **Brief Summary** (3-4 sentences)"
         )
         response = ai.chat(prompt)
-        last_response = response
+        _last_responses[uid] = response
         if conv_id:
-            _append_chat(conv_id, f"\ud83d\udcc4 Uploaded: {file.filename}", response)
+            _append_chat(uid, conv_id, f"\ud83d\udcc4 Uploaded: {file.filename}", response)
         return jsonify({"response": response})
     except Exception as exc:
         return jsonify({"error": f"Failed to process PDF: {exc}"}), 500
@@ -340,8 +377,9 @@ def upload_pdf():
 
 @app.route("/api/export/word", methods=["POST"])
 def export_word():
+    uid = _get_user_id()
     data = request.get_json(force=True)
-    content = data.get("content", "") or last_response
+    content = data.get("content", "") or _last_responses.get(uid, "")
     title = data.get("title", "Thesis Draft")
 
     if not content:
@@ -357,8 +395,9 @@ def export_word():
 
 @app.route("/api/export/latex", methods=["POST"])
 def export_latex():
+    uid = _get_user_id()
     data = request.get_json(force=True)
-    content = data.get("content", "") or last_response
+    content = data.get("content", "") or _last_responses.get(uid, "")
     title = data.get("title", "Thesis Draft")
     author = data.get("author", "Student Name")
 
@@ -375,15 +414,17 @@ def export_latex():
 
 @app.route("/api/export/markdown", methods=["POST"])
 def export_markdown():
+    uid = _get_user_id()
     data = request.get_json(force=True)
-    content = data.get("content", "") or last_response
+    content = data.get("content", "") or _last_responses.get(uid, "")
     filename = data.get("filename", "")
 
     if not content:
         return jsonify({"error": "No content to export"}), 400
 
     try:
-        filepath = save_draft_markdown(content, filename)
+        drafts_dir = _user_drafts_dir(uid)
+        filepath = save_draft_markdown(content, filename, drafts_dir=drafts_dir)
         return send_file(filepath, as_attachment=True,
                          download_name=os.path.basename(filepath))
     except Exception as exc:
@@ -393,10 +434,11 @@ def export_markdown():
 @app.route("/api/drafts", methods=["GET"])
 def list_drafts():
     """List all saved drafts with metadata."""
-    ensure_drafts_dir()
+    uid = _get_user_id()
+    drafts_dir = _user_drafts_dir(uid)
     files = []
-    for f in sorted(os.listdir(DRAFTS_DIR)):
-        path = os.path.join(DRAFTS_DIR, f)
+    for f in sorted(os.listdir(drafts_dir)):
+        path = os.path.join(drafts_dir, f)
         if os.path.isfile(path):
             stat = os.stat(path)
             files.append({
@@ -410,13 +452,17 @@ def list_drafts():
 @app.route("/api/drafts/<filename>", methods=["GET"])
 def download_draft(filename):
     """Download a saved draft."""
-    return send_from_directory(DRAFTS_DIR, filename, as_attachment=True)
+    uid = _get_user_id()
+    drafts_dir = _user_drafts_dir(uid)
+    return send_from_directory(drafts_dir, filename, as_attachment=True)
 
 
 @app.route("/api/drafts/<filename>/preview", methods=["GET"])
 def preview_draft(filename):
     """Return the text content of a draft for in-browser preview."""
-    filepath = os.path.join(DRAFTS_DIR, filename)
+    uid = _get_user_id()
+    drafts_dir = _user_drafts_dir(uid)
+    filepath = os.path.join(drafts_dir, filename)
     if not os.path.isfile(filepath):
         return jsonify({"error": "File not found"}), 404
     try:
@@ -430,7 +476,9 @@ def preview_draft(filename):
 @app.route("/api/drafts/<filename>", methods=["DELETE"])
 def delete_draft(filename):
     """Delete a saved draft."""
-    filepath = os.path.join(DRAFTS_DIR, filename)
+    uid = _get_user_id()
+    drafts_dir = _user_drafts_dir(uid)
+    filepath = os.path.join(drafts_dir, filename)
     if not os.path.isfile(filepath):
         return jsonify({"error": "File not found"}), 404
     try:
@@ -443,12 +491,14 @@ def delete_draft(filename):
 @app.route("/api/drafts/<filename>/rename", methods=["POST"])
 def rename_draft(filename):
     """Rename a saved draft."""
+    uid = _get_user_id()
+    drafts_dir = _user_drafts_dir(uid)
     data = request.get_json(force=True)
     new_name = data.get("name", "").strip()
     if not new_name:
         return jsonify({"error": "New name required"}), 400
-    old_path = os.path.join(DRAFTS_DIR, filename)
-    new_path = os.path.join(DRAFTS_DIR, new_name)
+    old_path = os.path.join(drafts_dir, filename)
+    new_path = os.path.join(drafts_dir, new_name)
     if not os.path.isfile(old_path):
         return jsonify({"error": "File not found"}), 404
     if os.path.exists(new_path):
@@ -464,21 +514,24 @@ def rename_draft(filename):
 
 @app.route("/api/memory", methods=["GET"])
 def memory():
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     return jsonify({"memory": ai.memory.render_context()})
 
 
 @app.route("/api/memory/full", methods=["GET"])
 def memory_full():
     """Return full structured memory data for the UI panel."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     return jsonify(ai.memory.get_full_data())
 
 
 @app.route("/api/memory/field", methods=["PUT"])
 def memory_update_field():
     """Update a single memory field."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     data = request.get_json(force=True)
     field = data.get("field", "")
     value = data.get("value", "")
@@ -492,7 +545,8 @@ def memory_update_field():
 @app.route("/api/memory/field", methods=["DELETE"])
 def memory_clear_field():
     """Clear a memory field."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     data = request.get_json(force=True)
     field = data.get("field", "")
     if not field:
@@ -505,7 +559,8 @@ def memory_clear_field():
 @app.route("/api/memory/item", methods=["DELETE"])
 def memory_delete_item():
     """Delete a specific item from a list field by index."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     data = request.get_json(force=True)
     list_name = data.get("list", "")
     index = data.get("index", -1)
@@ -521,7 +576,8 @@ def memory_delete_item():
 @app.route("/api/memory/add", methods=["POST"])
 def memory_add_item():
     """Add an item to a list field (notes, decisions, progress)."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     data = request.get_json(force=True)
     list_name = data.get("list", "")
     value = data.get("value", "").strip()
@@ -543,7 +599,8 @@ def memory_add_item():
 
 @app.route("/api/reset", methods=["POST"])
 def reset():
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     ai.reset()
     return jsonify({"status": "ok", "message": "Conversation cleared. Memory retained."})
 
@@ -553,22 +610,25 @@ def reset():
 @app.route("/api/conversations", methods=["GET"])
 def list_convs():
     """Return all conversations (id, title, created, updated, message_count)."""
-    return jsonify({"conversations": _list_conversations()})
+    uid = _get_user_id()
+    return jsonify({"conversations": _list_conversations(uid)})
 
 
 @app.route("/api/conversations", methods=["POST"])
 def create_conv():
     """Create a new conversation and return it."""
+    uid = _get_user_id()
     data = request.get_json(force=True) if request.data else {}
     title = data.get("title", "New Chat")
-    conv = _create_conversation(title)
+    conv = _create_conversation(uid, title)
     return jsonify(conv)
 
 
 @app.route("/api/conversations/<conv_id>", methods=["GET"])
 def get_conv(conv_id):
     """Return full conversation with messages."""
-    conv = _load_conversation(conv_id)
+    uid = _get_user_id()
+    conv = _load_conversation(uid, conv_id)
     if conv is None:
         return jsonify({"error": "Not found"}), 404
     return jsonify(conv)
@@ -577,7 +637,8 @@ def get_conv(conv_id):
 @app.route("/api/conversations/<conv_id>", methods=["DELETE"])
 def delete_conv(conv_id):
     """Delete a conversation."""
-    path = _conv_path(conv_id)
+    uid = _get_user_id()
+    path = _conv_path(uid, conv_id)
     if not os.path.exists(path):
         return jsonify({"error": "Not found"}), 404
     try:
@@ -590,15 +651,16 @@ def delete_conv(conv_id):
 @app.route("/api/conversations/<conv_id>/rename", methods=["POST"])
 def rename_conv(conv_id):
     """Rename a conversation."""
+    uid = _get_user_id()
     data = request.get_json(force=True)
     new_title = data.get("title", "").strip()
     if not new_title:
         return jsonify({"error": "Title required"}), 400
-    conv = _load_conversation(conv_id)
+    conv = _load_conversation(uid, conv_id)
     if conv is None:
         return jsonify({"error": "Not found"}), 404
     conv["title"] = new_title
-    _save_conversation(conv)
+    _save_conversation(uid, conv)
     return jsonify({"status": "ok"})
 
 
@@ -610,7 +672,7 @@ def get_history():
 
 # ── Command Handler ──────────────────────────────────────────────
 
-def _handle_command(cmd: str, ai: ThesisAI) -> str:
+def _handle_command(cmd: str, ai: ThesisAI, user_id: str = "") -> str:
     parts = cmd.strip().split(maxsplit=1)
     keyword = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
@@ -721,7 +783,7 @@ def _handle_command(cmd: str, ai: ThesisAI) -> str:
         return None  # route through AI
 
     if keyword == "/progress" or keyword == "/dashboard":
-        return _build_progress_dashboard(ai)
+        return _build_progress_dashboard(ai, user_id)
 
     if keyword == "/deadline":
         if not arg:
@@ -744,7 +806,7 @@ def _handle_command(cmd: str, ai: ThesisAI) -> str:
     return f"Unknown command: `{keyword}`. Type `/help` for available commands."
 
 
-def _build_progress_dashboard(ai: ThesisAI) -> str:
+def _build_progress_dashboard(ai: ThesisAI, user_id: str) -> str:
     """Build a text-based progress dashboard from memory and drafts."""
     mem = ai.memory.data
     lines = ["## Research Progress Dashboard\n"]
@@ -790,16 +852,17 @@ def _build_progress_dashboard(ai: ThesisAI) -> str:
         lines.append("_No papers reviewed yet._")
 
     # Drafts
-    ensure_drafts_dir()
+    drafts_dir = _user_drafts_dir(user_id)
+    os.makedirs(drafts_dir, exist_ok=True)
     draft_files = []
     try:
-        draft_files = [f for f in os.listdir(DRAFTS_DIR) if os.path.isfile(os.path.join(DRAFTS_DIR, f))]
+        draft_files = [f for f in os.listdir(drafts_dir) if os.path.isfile(os.path.join(drafts_dir, f))]
     except Exception:
         pass
     lines.append(f"\n### Drafts Written ({len(draft_files)})")
     if draft_files:
         for df in sorted(draft_files):
-            size_kb = os.path.getsize(os.path.join(DRAFTS_DIR, df)) / 1024
+            size_kb = os.path.getsize(os.path.join(drafts_dir, df)) / 1024
             lines.append(f"- {df} ({size_kb:.1f} KB)")
     else:
         lines.append("_No drafts yet. Use `/write <chapter>` to start._")
@@ -864,7 +927,8 @@ def _build_progress_dashboard(ai: ThesisAI) -> str:
 @app.route("/api/conversations/<conv_id>/export/<fmt>", methods=["GET"])
 def export_conversation_route(conv_id, fmt):
     """Export a full conversation as Word, Markdown, or LaTeX."""
-    conv = _load_conversation(conv_id)
+    uid = _get_user_id()
+    conv = _load_conversation(uid, conv_id)
     if conv is None:
         return jsonify({"error": "Conversation not found"}), 404
 
@@ -885,15 +949,15 @@ def export_conversation_route(conv_id, fmt):
 @app.route("/api/upload-pdfs", methods=["POST"])
 def upload_multiple_pdfs():
     """Upload and analyze multiple PDFs at once."""
-    global last_response
+    uid = _get_user_id()
     files = request.files.getlist("files")
     conv_id = request.form.get("conversation_id", "").strip()
 
     if not files:
         return jsonify({"error": "No files uploaded"}), 400
 
-    ai = get_agent()
-    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+    ai = get_agent(uid)
+    upload_dir = os.path.join(_BASE_DATA_DIR, "user_data", uid, "uploads")
     os.makedirs(upload_dir, exist_ok=True)
 
     results = []
@@ -941,10 +1005,10 @@ def upload_multiple_pdfs():
             combined.append(f"## {r['file']}\n\n**Error:** {r['error']}")
 
     full_response = "\n\n---\n\n".join(combined)
-    last_response = full_response
+    _last_responses[uid] = full_response
     if conv_id:
         file_names = ", ".join(f.filename for f in files if f.filename)
-        _append_chat(conv_id, f"Uploaded {len(files)} PDFs: {file_names}", full_response)
+        _append_chat(uid, conv_id, f"Uploaded {len(files)} PDFs: {file_names}", full_response)
 
     return jsonify({"response": full_response, "count": len(results)})
 
@@ -954,7 +1018,8 @@ def upload_multiple_pdfs():
 @app.route("/api/bibliography/<style>", methods=["GET"])
 def get_bibliography(style):
     """Generate a bibliography file from memory papers."""
-    ai = get_agent()
+    uid = _get_user_id()
+    ai = get_agent(uid)
     papers = ai.memory.data.get("discussed_papers", [])
     if not papers:
         return jsonify({"error": "No papers in memory"}), 400

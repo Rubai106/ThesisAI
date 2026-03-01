@@ -69,19 +69,25 @@ def extract_pdf_text(filepath: str, max_pages: int = 50) -> str:
 #  SAVE DRAFT TO FILE
 # ══════════════════════════════════════════════════════════════════
 
-def save_draft_markdown(content: str, filename: str = "") -> str:
+def save_draft_markdown(content: str, filename: str = "", drafts_dir: str = "") -> str:
     """Save a draft as a Markdown file in the drafts folder.
+
+    Args:
+        content: Markdown text to save.
+        filename: Optional filename (auto-generated if empty).
+        drafts_dir: Optional custom directory for drafts. Falls back to DRAFTS_DIR.
 
     Returns the full path of the saved file.
     """
-    ensure_drafts_dir()
+    target_dir = drafts_dir or DRAFTS_DIR
+    os.makedirs(target_dir, exist_ok=True)
     if not filename:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"draft_{timestamp}.md"
     if not filename.endswith(".md"):
         filename += ".md"
 
-    filepath = os.path.join(DRAFTS_DIR, _sanitize_filename(filename))
+    filepath = os.path.join(target_dir, _sanitize_filename(filename))
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     return filepath

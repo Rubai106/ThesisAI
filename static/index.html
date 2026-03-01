@@ -405,6 +405,27 @@
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
+// ══════════════════════════════════════════
+//  USER SESSION (per-browser privacy)
+// ══════════════════════════════════════════
+function getUserId() {
+  let uid = localStorage.getItem('thesis_user_id');
+  if (!uid) { uid = crypto.randomUUID(); localStorage.setItem('thesis_user_id', uid); }
+  return uid;
+}
+const USER_ID = getUserId();
+
+// Wrapper for fetch that always includes user ID header
+function apiFetch(url, opts = {}) {
+  opts.headers = opts.headers || {};
+  if (typeof opts.headers.set === 'function') {
+    opts.headers.set('X-User-ID', USER_ID);
+  } else {
+    opts.headers['X-User-ID'] = USER_ID;
+  }
+  return fetch(url, opts);
+}
+
 const chatContainer = document.getElementById('chatContainer');
 const messageInput  = document.getElementById('messageInput');
 const sendBtn       = document.getElementById('sendBtn');
@@ -446,7 +467,7 @@ function showToast(msg) {
 
 async function loadConversations() {
   try {
-    const resp = await fetch('/api/conversations');
+    const resp = await apiFetch('/api/conversations');
     const data = await resp.json();
     renderConversationList(data.conversations);
   } catch {}
@@ -495,10 +516,10 @@ function renderConversationList(convs) {
 
 async function newChat() {
   // Reset the agent's conversation on the server
-  await fetch('/api/reset', { method: 'POST' });
+  await apiFetch('/api/reset', { method: 'POST' });
   // Create a new conversation
   try {
-    const resp = await fetch('/api/conversations', {
+    const resp = await apiFetch('/api/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Chat' }),
@@ -517,13 +538,13 @@ async function newChat() {
 async function switchConversation(convId) {
   if (convId === currentConvId) return;
   // Reset the agent on server (clear in-memory history so it doesn't bleed)
-  await fetch('/api/reset', { method: 'POST' });
+  await apiFetch('/api/reset', { method: 'POST' });
   currentConvId = convId;
   localStorage.setItem('currentConvId', convId);
   clearChatUI();
   // Load messages for this conversation
   try {
-    const resp = await fetch(`/api/conversations/${convId}`);
+    const resp = await apiFetch(`/api/conversations/${convId}`);
     const conv = await resp.json();
     pageTitle.textContent = conv.title || 'New Chat';
     if (conv.messages && conv.messages.length > 0) {
@@ -539,7 +560,7 @@ async function switchConversation(convId) {
 async function deleteConversation(convId) {
   if (!confirm('Delete this conversation?')) return;
   try {
-    await fetch(`/api/conversations/${convId}`, { method: 'DELETE' });
+    await apiFetch(`/api/conversations/${convId}`, { method: 'DELETE' });
     if (convId === currentConvId) {
       await newChat();
     } else {
@@ -553,7 +574,7 @@ async function renameConversation(convId) {
   const name = prompt('Rename conversation:');
   if (!name) return;
   try {
-    await fetch(`/api/conversations/${convId}/rename`, {
+    await apiFetch(`/api/conversations/${convId}/rename`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: name }),
@@ -579,7 +600,7 @@ async function init() {
   if (savedId) {
     // Check if that conversation exists and has messages
     try {
-      const resp = await fetch(`/api/conversations/${savedId}`);
+      const resp = await apiFetch(`/api/conversations/${savedId}`);
       if (resp.ok) {
         const conv = await resp.json();
         if (conv.messages && conv.messages.length > 0) {
@@ -631,7 +652,7 @@ function closePanel() {
 async function loadMemoryPanel() {
   sidePanel.innerHTML = '<div class="panel-header"><h3>🧠 Memory</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body"><p style="color:var(--text-dim)">Loading...</p></div>';
   try {
-    const resp = await fetch('/api/memory/full');
+    const resp = await apiFetch('/api/memory/full');
     const data = await resp.json();
     renderMemoryPanel(data);
   } catch { sidePanel.querySelector('.panel-body').innerHTML = '<p style="color:var(--red)">Failed to load memory.</p>'; }
@@ -682,21 +703,21 @@ function renderMemoryPanel(data) {
 
 async function saveMemField(field) {
   const v = document.getElementById(`mem-${field}`).value.trim();
-  try { await fetch('/api/memory/field',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:v})}); showToast('Saved'); } catch { showToast('Failed to save'); }
+  try { await apiFetch('/api/memory/field',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:v})}); showToast('Saved'); } catch { showToast('Failed to save'); }
 }
 async function deleteMemItem(listName,index) {
-  try { await fetch('/api/memory/item',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,index})}); loadMemoryPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
+  try { await apiFetch('/api/memory/item',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,index})}); loadMemoryPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
 }
 async function addMemItem(listName) {
   const inp = document.getElementById(`mem-add-${listName}`);
   const v = inp.value.trim(); if (!v) return;
-  try { await fetch('/api/memory/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,value:v})}); inp.value=''; loadMemoryPanel(); showToast('Added'); } catch { showToast('Failed'); }
+  try { await apiFetch('/api/memory/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:listName,value:v})}); inp.value=''; loadMemoryPanel(); showToast('Added'); } catch { showToast('Failed'); }
 }
 
 // ── Drafts Panel ─────────────────────────
 async function loadDraftsPanel() {
   sidePanel.innerHTML = '<div class="panel-header"><h3>📄 Drafts</h3><button class="panel-close" onclick="closePanel()">✕</button></div><div class="panel-body"><p style="color:var(--text-dim)">Loading...</p></div>';
-  try { const resp = await fetch('/api/drafts'); const data = await resp.json(); renderDraftsPanel(data.drafts); }
+  try { const resp = await apiFetch('/api/drafts'); const data = await resp.json(); renderDraftsPanel(data.drafts); }
   catch { sidePanel.querySelector('.panel-body').innerHTML = '<p style="color:var(--red)">Failed to load drafts.</p>'; }
 }
 function renderDraftsPanel(drafts) {
@@ -718,7 +739,7 @@ function renderDraftsPanel(drafts) {
 
 async function previewDraft(name) {
   try {
-    const resp = await fetch(`/api/drafts/${encodeURIComponent(name)}/preview`);
+    const resp = await apiFetch(`/api/drafts/${encodeURIComponent(name)}/preview`);
     const data = await resp.json();
     document.getElementById('previewTitle').textContent = data.name;
     try { document.getElementById('previewContent').innerHTML = marked.parse(data.content); }
@@ -730,11 +751,11 @@ function closePreview() { document.getElementById('previewModal').classList.remo
 function downloadDraft(name) { const a=document.createElement('a'); a.href=`/api/drafts/${encodeURIComponent(name)}`; a.download=name; a.click(); }
 async function renameDraft(name) {
   const nn = prompt('New file name:', name); if (!nn || nn===name) return;
-  try { const r=await fetch(`/api/drafts/${encodeURIComponent(name)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nn})}); if(r.ok){loadDraftsPanel();showToast('Renamed');}else{const d=await r.json();showToast(d.error||'Failed');}} catch{showToast('Failed');}
+  try { const r=await apiFetch(`/api/drafts/${encodeURIComponent(name)}/rename`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nn})}); if(r.ok){loadDraftsPanel();showToast('Renamed');}else{const d=await r.json();showToast(d.error||'Failed');}} catch{showToast('Failed');}
 }
 async function deleteDraft(name) {
   if (!confirm(`Delete "${name}"?`)) return;
-  try { await fetch(`/api/drafts/${encodeURIComponent(name)}`,{method:'DELETE'}); loadDraftsPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
+  try { await apiFetch(`/api/drafts/${encodeURIComponent(name)}`,{method:'DELETE'}); loadDraftsPanel(); showToast('Deleted'); } catch { showToast('Failed'); }
 }
 
 // ══════════════════════════════════════════
@@ -743,7 +764,7 @@ async function deleteDraft(name) {
 
 async function ensureConversation() {
   if (!currentConvId) {
-    const resp = await fetch('/api/conversations', {
+    const resp = await apiFetch('/api/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Chat' }),
@@ -764,7 +785,7 @@ async function sendMessage(text) {
   appendMessage('user', text);
   const thinkingEl = appendThinking();
   try {
-    const resp = await fetch('/api/chat', {
+    const resp = await apiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, conversation_id: currentConvId }),
@@ -801,7 +822,7 @@ async function uploadPDF(input) {
   formData.append('file', file);
   formData.append('conversation_id', currentConvId);
   try {
-    const resp = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
+    const resp = await apiFetch('/api/upload-pdf', { method: 'POST', body: formData });
     const data = await resp.json();
     thinkingEl.remove();
     if (data.error) appendMessage('error', data.error);
@@ -816,7 +837,7 @@ async function uploadPDF(input) {
 
 async function exportAs(format, content) {
   try {
-    const resp = await fetch(`/api/export/${format}`, {
+    const resp = await apiFetch(`/api/export/${format}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, title: 'Thesis Draft' }),
     });
@@ -1035,7 +1056,7 @@ async function uploadMultiplePDFs(input) {
   formData.append('conversation_id', currentConvId);
 
   try {
-    const resp = await fetch('/api/upload-pdfs', { method: 'POST', body: formData });
+    const resp = await apiFetch('/api/upload-pdfs', { method: 'POST', body: formData });
     const data = await resp.json();
     thinkingEl.remove();
     if (data.error) appendMessage('error', data.error);
@@ -1055,7 +1076,7 @@ async function uploadMultiplePDFs(input) {
 async function exportConversation(format) {
   if (!currentConvId) { showToast('No conversation to export'); return; }
   try {
-    const resp = await fetch(`/api/conversations/${currentConvId}/export/${format}`);
+    const resp = await apiFetch(`/api/conversations/${currentConvId}/export/${format}`);
     if (!resp.ok) {
       const err = await resp.json();
       showToast('Export failed: ' + (err.error || 'Unknown'));
