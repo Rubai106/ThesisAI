@@ -26,6 +26,8 @@ class ThesisAI:
         self.client = OpenAI(
             api_key=api_key or config.GITHUB_TOKEN,
             base_url=base_url or config.GITHUB_BASE_URL,
+            timeout=55.0,        # avoid Vercel 60s timeout
+            max_retries=2,       # auto-retry on transient errors
         )
         self.model = model or config.GITHUB_MODEL
         self._api_key = api_key or config.GITHUB_TOKEN
@@ -41,7 +43,12 @@ class ThesisAI:
             self._base_url = base_url
         if model:
             self.model = model
-        self.client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        self.client = OpenAI(
+            api_key=self._api_key,
+            base_url=self._base_url,
+            timeout=55.0,
+            max_retries=2,
+        )
 
     # ── helpers ──────────────────────────────────────────────────
 

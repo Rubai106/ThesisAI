@@ -16,5 +16,6 @@ if _IS_VERCEL:
     MEMORY_FILE = os.path.join("/tmp", "memory.json")
 else:
     MEMORY_FILE = os.path.join(os.path.dirname(__file__), "memory.json")
-MAX_AGENT_ITERATIONS = 15
+# Lower iterations on Vercel to stay within function timeout
+MAX_AGENT_ITERATIONS = 5 if _IS_VERCEL else 15
 MAX_CONVERSATION_HISTORY = 50

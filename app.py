@@ -451,10 +451,16 @@ def chat():
         _append_chat(uid, conv_id, user_message, response)
         return jsonify({"response": response})
     except Exception as exc:
-        err = str(exc)
-        if "insufficient_quota" in err or "429" in err:
-            return jsonify({"error": "API quota exceeded. Check your GitHub token permissions."}), 429
-        return jsonify({"error": f"Error: {err}"}), 500
+        err = str(exc).lower()
+        if "insufficient_quota" in err or "429" in err or "rate" in err:
+            return jsonify({"error": "API quota exceeded. Go to Settings and add your own API key for independent quota."}), 429
+        if "authentication" in err or "401" in err or "invalid_api_key" in err:
+            return jsonify({"error": "Invalid API key. Go to Settings to update your key."}), 401
+        if "timeout" in err or "timed out" in err:
+            return jsonify({"error": "Request timed out. Try a shorter question or switch to a faster provider in Settings."}), 504
+        if "connection" in err:
+            return jsonify({"error": "Could not connect to the AI provider. Check your Settings or try again."}), 502
+        return jsonify({"error": f"Error: {exc}"}), 500
 
 
 # ── PDF Upload ───────────────────────────────────────────────────
